@@ -9,6 +9,14 @@ cd /d %~dp0
 set COMPOSE_FILE=docker-compose-yudao.yaml
 set CMD=docker compose -f %COMPOSE_FILE%
 
+REM ---- 数据库备份配置 ----
+set DB_CONTAINER=yudao-mysql
+set DB_USER=root
+set DB_PASSWORD=123456
+set BACKUP_DIR=backups
+REM 默认排除的系统库
+set DB_EXCLUDE=information_schema mysql performance_schema sys
+
 REM ---- 前置检查 ----
 where docker >nul 2>nul
 if errorlevel 1 (
@@ -43,6 +51,13 @@ echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
+echo.
+echo   数据库（备份 / 还原）：
+echo     31. 备份全部库（自动排除系统库）
+echo     32. 还原指定文件
+echo     33. 查看备份列表
+echo     34. 查看当前数据库
+echo.
 echo     0. 退出
 echo ========================================
 set /p choice=请输入选项并回车:
@@ -67,6 +82,10 @@ if "%choice%"=="15" goto :sentinel_up
 if "%choice%"=="25" goto :sentinel_down
 if "%choice%"=="16" goto :jenkins_up
 if "%choice%"=="26" goto :jenkins_down
+if "%choice%"=="31" goto :db_backup
+if "%choice%"=="32" goto :db_restore
+if "%choice%"=="33" goto :db_list
+if "%choice%"=="34" goto :db_show
 if "%choice%"=="0" goto :quit
 
 echo.
@@ -92,7 +111,6 @@ if /i not "%confirm%"=="Y" (
     timeout /t 1 >nul
     goto :menu
 )
-REM 带所有 profile 的 down 才能把 profile 容器一并清掉
 docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down
 echo.
 echo [完成] 已全部停止。
@@ -240,6 +258,142 @@ goto :menu
 echo.
 echo [信息] 停止 Jenkins...
 %CMD% --profile jenkins stop jenkins
+pause
+goto :menu
+
+REM ================= 数据库备份 =================
+:db_backup
+echo.
+REM 检查容器是否运行
+set RUNNING=
+for /f "delims=" %%s in ('docker inspect -f "{{.State.Running}}" %DB_CONTAINER% 2^>nul') do set RUNNING=%%s
+if /i not "!RUNNING!"=="true" (
+    echo [错误] 容器 %DB_CONTAINER% 未运行或不存在。
+    echo.
+    echo 当前运行的容器：
+    docker ps --format "  {{.Names}}  {{.Status}}"
+    echo.
+    echo 提示：如果 mysql 容器名不是 %DB_CONTAINER%，
+    echo       请修改脚本开头的 set DB_CONTAINER=xxx
+    pause
+    goto :menu
+)
+
+REM 获取所有非默认数据库
+echo [信息] 正在获取数据库列表...
+set DB_LIST=
+for /f "delims=" %%d in ('docker exec %DB_CONTAINER% mysql -u%DB_USER% -p%DB_PASSWORD% -N -e "SHOW DATABASES;" 2^>nul') do (
+    set DB=%%d
+    set SKIP=
+    for %%e in (%DB_EXCLUDE%) do (
+        if /i "!DB!"=="%%e" set SKIP=1
+    )
+    if not defined SKIP (
+        set DB_LIST=!DB_LIST! !DB!
+    )
+)
+
+if "!DB_LIST!"=="" (
+    echo [错误] 未发现任何非默认数据库。
+    pause
+    goto :menu
+)
+
+echo.
+echo   将备份：!DB_LIST!
+echo.
+
+REM 生成时间戳
+for /f "tokens=1-4 delims=/ " %%a in ('date /t') do set D=%%a%%b%%c
+for /f "tokens=1-2 delims=:." %%a in ('echo %time%') do set T=%%a%%b
+set STAMP=%D%_%T%
+
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
+set FILE=%BACKUP_DIR%\mysql_%STAMP%.sql
+
+echo [信息] 正在备份...
+echo   容器: %DB_CONTAINER%
+echo   文件: %FILE%
+echo.
+
+docker exec %DB_CONTAINER% mysqldump ^
+  -u%DB_USER% -p%DB_PASSWORD% ^
+  --default-character-set=utf8mb4 ^
+  --single-transaction ^
+  --routines --triggers --events ^
+  --databases !DB_LIST! > "%FILE%"
+
+if errorlevel 1 (
+    echo [错误] 备份失败，请检查容器、密码。
+) else (
+    for %%F in ("%FILE%") do echo [成功] 备份完成，大小 %%~zF 字节
+    echo [路径] %CD%\%FILE%
+)
+echo.
+pause
+goto :menu
+
+REM ================= 数据库还原 =================
+:db_restore
+echo.
+echo 可用的备份文件：
+dir /b /o-d "%BACKUP_DIR%\*.sql" 2>nul
+echo.
+set /p FILE=请输入要还原的 SQL 文件路径（如 %BACKUP_DIR%\mysql_20260921_1200.sql）:
+
+if not exist "%FILE%" (
+    echo [错误] 文件不存在: %FILE%
+    pause
+    goto :menu
+)
+
+echo.
+echo [警告] 还原会覆盖现有同名库的数据！
+set /p confirm=确认还原？(Y/N):
+if /i not "%confirm%"=="Y" (
+    echo [取消] 已取消。
+    pause
+    goto :menu
+)
+
+echo.
+echo [信息] 正在还原 %FILE% ...
+docker exec -i %DB_CONTAINER% mysql -u%DB_USER% -p%DB_PASSWORD% < "%FILE%"
+
+if errorlevel 1 (
+    echo [错误] 还原失败。
+) else (
+    echo [成功] 还原完成。
+)
+echo.
+pause
+goto :menu
+
+REM ================= 备份列表 =================
+:db_list
+echo.
+echo 备份文件列表（按时间倒序）：
+dir /o-d "%BACKUP_DIR%\*.sql" 2>nul
+echo.
+pause
+goto :menu
+
+REM ================= 查看数据库 =================
+:db_show
+echo.
+echo 所有数据库：
+docker exec %DB_CONTAINER% mysql -u%DB_USER% -p%DB_PASSWORD% -e "SHOW DATABASES;" 2>nul
+echo.
+echo 将要备份的（排除系统库 %DB_EXCLUDE%）：
+for /f "delims=" %%d in ('docker exec %DB_CONTAINER% mysql -u%DB_USER% -p%DB_PASSWORD% -N -e "SHOW DATABASES;" 2^>nul') do (
+    set DB=%%d
+    set SKIP=
+    for %%e in (%DB_EXCLUDE%) do (
+        if /i "!DB!"=="%%e" set SKIP=1
+    )
+    if not defined SKIP echo   !DB!
+)
+echo.
 pause
 goto :menu
 
