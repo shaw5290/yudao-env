@@ -1,0 +1,213 @@
+name: yudao
+services:
+  nginx:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}nginx
+    image: nginx:latest
+    restart: always
+    ports:
+      - "${NGINX_PORT}:80"
+
+  mysql:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}mysql
+    image: mysql:8.0.21
+    restart: always
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/conf:/etc/mysql/conf.d:rw
+      - ./mysql/error_log:/var/log
+      - ./mysql/initdb:/docker-entrypoint-initdb.d:ro    # ← 新增
+    ports:
+      - "${MYSQL_PORT}:3306"
+    environment:
+      TZ: Asia/Shanghai
+      LANG: C.UTF-8
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    command:
+      mysqld
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --explicit_defaults_for_timestamp=true
+      --lower_case_table_names=1
+      --max_allowed_packet=128M
+      --max_connections=2000
+      --wait_timeout=20000
+      --default-authentication-plugin=mysql_native_password
+
+  redis:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}redis
+    image: redis:7
+    restart: always
+    ports:
+      - "${REDIS_PORT}:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+
+  # ==================== Nacos 3.x（控制台端口 8080）====================
+  nacos:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}nacos
+    image: nacos/nacos-server:v3.0.3
+    restart: always
+    depends_on:
+      - mysql
+    ports:
+      - "${NACOS_PORT}:8848"
+      - "${NACOS_CONSOLE_PORT}:8080"
+      - "${NACOS_GRPC_PORT}:9848"
+      - "${NACOS_GRPC_PORT_2}:9849"
+    privileged: true
+    environment:
+      JVM_XMS: 256m
+      JVM_XMX: 256m
+      JVM_MS: 64m
+      JVM_MMS: 64m
+      MODE: standalone
+      NACOS_REPLICAS: 1
+      PREFER_HOST_MODE: ip
+      NACOS_SERVER_IP: 127.0.0.1
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: ${NACOS_DB_NAME}
+      MYSQL_SERVICE_USER: ${NACOS_DB_USER}
+      MYSQL_SERVICE_PASSWORD: ${NACOS_DB_PASSWORD}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
+      NACOS_AUTH_USER_AGENT_AUTH_WHITE_ENABLE: 1
+    volumes:
+      - ./nacos/logs:/home/nacos/logs
+      - ./nacos/plugins:/home/nacos/plugins
+      - ./nacos/data:/home/nacos/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/nacos/actuator/health"]
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      timeout: 10s
+
+  # ==================== 以下均需 --profile 才启动 ====================
+
+  jenkins:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}jenkins
+    image: jenkins/jenkins:lts
+    restart: always
+    user: root
+    profiles: ["jenkins"]
+    ports:
+      - "${JENKINS_PORT}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      JAVA_OPTS: >-
+        -Xms1g -Xmx2g
+        -XX:+UseG1GC
+        -Dhudson.model.LoadStatistics.clock=1000
+        -Dhudson.model.LoadStatistics.decay=0.1
+        -Djava.awt.headless=true
+    volumes:
+      - ./jenkins/jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
+
+  minio:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}minio
+    image: minio/minio:latest
+    restart: always
+    profiles: ["minio"]
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio/data:/data
+
+  rocketmq-namesrv:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-namesrv
+    image: apache/rocketmq:5.3.1
+    restart: always
+    profiles: ["rocketmq"]
+    ports:
+      - "${ROCKETMQ_NAMESRV_PORT}:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+    command: sh mqnamesrv
+    volumes:
+      - ./rocketmq/namesrv/logs:/home/rocketmq/logs
+
+  rocketmq-broker:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-broker
+    image: apache/rocketmq:5.3.1
+    restart: always
+    profiles: ["rocketmq"]
+    depends_on:
+      - rocketmq-namesrv
+    ports:
+      - "${ROCKETMQ_BROKER_PORT}:10911"
+      - "${ROCKETMQ_BROKER_VIP_PORT}:10909"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/conf/broker.conf
+    volumes:
+      - ./rocketmq/broker/logs:/home/rocketmq/logs
+      - ./rocketmq/broker/store:/home/rocketmq/store
+      - ./rocketmq/broker/conf/broker.conf:/home/rocketmq/conf/broker.conf
+
+  xxl-job-admin:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}xxl-job-admin
+    image: xuxueli/xxl-job-admin:2.4.1
+    restart: always
+    profiles: ["xxl-job"]
+    depends_on:
+      - mysql
+    ports:
+      - "${XXL_JOB_PORT}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://mysql:3306/${XXL_JOB_DB_NAME}?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai&useSSL=false
+        --spring.datasource.username=root
+        --spring.datasource.password=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./xxl-job/logs:/data/applogs
+
+  seata-server:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}seata-server
+    image: seataio/seata-server:2.0.0
+    restart: always
+    profiles: ["seata"]
+    depends_on:
+      - nacos
+      - mysql
+    ports:
+      - "${SEATA_PORT}:8091"
+      - "${SEATA_DASHBOARD_PORT}:7091"
+    environment:
+      SEATA_IP: ${SEATA_IP}
+      SEATA_PORT: 8091
+      STORE_MODE: db
+      SEATA_REGISTRY_TYPE: nacos
+      SEATA_REGISTRY_NACOS_SERVER_ADDR: nacos:8848
+      SEATA_REGISTRY_NACOS_APPLICATION: seata-server
+      SEATA_REGISTRY_NACOS_GROUP: SEATA_GROUP
+      SEATA_CONFIG_TYPE: nacos
+      SEATA_CONFIG_NACOS_SERVER_ADDR: nacos:8848
+      SEATA_CONFIG_NACOS_GROUP: SEATA_GROUP
+      SEATA_CONFIG_NACOS_DATA_ID: seataServer.properties
+    volumes:
+      - ./seata/resources:/seata-server/resources
+
+  sentinel-dashboard:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}sentinel-dashboard
+    image: bladex/sentinel-dashboard:1.8.8
+    restart: always
+    profiles: ["sentinel"]
+    ports:
+      - "${SENTINEL_PORT}:8858"
+    environment:
+      JAVA_OPTS: "-Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard"
+    volumes:
+      - ./sentinel/logs:/root/logs

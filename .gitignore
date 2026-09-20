@@ -1,0 +1,72 @@
+# ============================================================
+#  原则：运行时数据/日志/缓存 忽略；通用配置/初始化脚本 保留
+# ============================================================
+
+# ===== 通用日志 =====
+logs/
+data/
+*.log
+
+# ===== MySQL：忽略数据/日志，保留 conf、initdb =====
+mysql/**
+!mysql/conf/
+!mysql/conf/**
+!mysql/initdb/
+!mysql/initdb/**
+
+# ===== Nacos：忽略数据/日志/插件，保留 conf =====
+nacos/**
+!nacos/conf/
+!nacos/conf/**
+
+# ===== MinIO：忽略数据 =====
+minio/data/
+
+# ===== RocketMQ：忽略日志/存储，保留 broker.conf =====
+rocketmq/namesrv/logs/
+rocketmq/broker/logs/
+rocketmq/broker/store/
+# 保留：rocketmq/broker/conf/
+
+# ===== Seata：忽略日志，保留 resources =====
+seata/logs/
+# 保留：seata/resources/
+
+# ===== Sentinel：忽略日志 =====
+sentinel/logs/
+
+# ===== XXL-Job：忽略日志 =====
+xxl-job/logs/
+
+# ===== Jenkins：整个 jenkins_home 都是运行时数据 =====
+jenkins/jenkins_home/
+
+# ===== Docker Compose 本地覆盖/环境变量 =====
+docker-compose.override.yml
+.env
+.env.local
+
+# ===== 批处理脚本（本机用，按需放开）=====
+# toggle-yudao.bat
+# menu-yudao.bat
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 编译产物 / 依赖 =====
+target/
+build/
+dist/
+node_modules/
+*.class
+*.jar
