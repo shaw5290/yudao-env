@@ -179,3 +179,11 @@ CREATE TABLE `permissions` (
                                UNIQUE INDEX `uk_role_permission` (`role`,`resource`,`action`) USING BTREE
 );
 
+-- 预置 dev/test/prod 命名空间，配合 application-{profile}.yaml 里 spring.cloud.nacos.discovery/config.namespace 使用
+-- kp 固定为 '1'，是 Nacos 内部约定的命名空间数据 key 前缀
+INSERT INTO `tenant_info` (`kp`, `tenant_id`, `tenant_name`, `tenant_desc`, `create_source`, `gmt_create`, `gmt_modified`)
+VALUES
+    ('1', 'dev', 'dev', '本地开发环境', 'nacos', UNIX_TIMESTAMP(NOW()) * 1000, UNIX_TIMESTAMP(NOW()) * 1000),
+    ('1', 'test', 'test', '测试环境', 'nacos', UNIX_TIMESTAMP(NOW()) * 1000, UNIX_TIMESTAMP(NOW()) * 1000),
+    ('1', 'prod', 'prod', '生产环境', 'nacos', UNIX_TIMESTAMP(NOW()) * 1000, UNIX_TIMESTAMP(NOW()) * 1000);
+
