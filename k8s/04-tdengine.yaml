@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tdengine-data
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tdengine-log
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tdengine
+  namespace: yudao
+  labels:
+    app: tdengine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tdengine
+  template:
+    metadata:
+      labels:
+        app: tdengine
+    spec:
+      containers:
+        - name: tdengine
+          image: tdengine/tdengine:3.3.6.0
+          ports:
+            - containerPort: 6041
+              hostPort: 6041   # 对应 .env 的 TDENGINE_PORT，taosAdapter REST/WebSocket
+            - containerPort: 6030
+              hostPort: 6030   # taosd 原生连接端口
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: TAOS_FQDN
+              value: tdengine
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/taos
+            - name: log
+              mountPath: /var/log/taos
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tdengine-data
+        - name: log
+          persistentVolumeClaim:
+            claimName: tdengine-log
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tdengine
+  namespace: yudao
+spec:
+  selector:
+    app: tdengine
+  ports:
+    - name: rest
+      port: 6041
+      targetPort: 6041
+    - name: native
+      port: 6030
+      targetPort: 6030

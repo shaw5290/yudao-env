@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: yudao
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - containerPort: 6379
+              hostPort: 6379   # 对应 .env 的 REDIS_PORT
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: REDIS_PASSWORD }
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: yudao
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

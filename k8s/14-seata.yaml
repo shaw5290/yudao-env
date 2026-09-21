@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seata-server
+  namespace: yudao
+  labels:
+    app: seata-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seata-server
+  template:
+    metadata:
+      labels:
+        app: seata-server
+    spec:
+      containers:
+        - name: seata-server
+          image: seataio/seata-server:2.0.0
+          ports:
+            - containerPort: 8091
+              hostPort: 8091   # 对应 .env 的 SEATA_PORT
+            - containerPort: 7091
+              hostPort: 7091   # 对应 .env 的 SEATA_DASHBOARD_PORT
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 SEATA_IP
+          env:
+            - name: SEATA_PORT
+              value: "8091"
+            - name: STORE_MODE
+              value: db
+            - name: SEATA_REGISTRY_TYPE
+              value: nacos
+            - name: SEATA_REGISTRY_NACOS_SERVER_ADDR
+              value: nacos:8848   # k8s Service 名
+            - name: SEATA_REGISTRY_NACOS_APPLICATION
+              value: seata-server
+            - name: SEATA_REGISTRY_NACOS_GROUP
+              value: SEATA_GROUP
+            - name: SEATA_CONFIG_TYPE
+              value: nacos
+            - name: SEATA_CONFIG_NACOS_SERVER_ADDR
+              value: nacos:8848
+            - name: SEATA_CONFIG_NACOS_GROUP
+              value: SEATA_GROUP
+            - name: SEATA_CONFIG_NACOS_DATA_ID
+              value: seataServer.properties
+          volumeMounts:
+            - name: resources
+              mountPath: /seata-server/resources
+      volumes:
+        - name: resources
+          hostPath:
+            path: /run/desktop/mnt/host/d/sourceCode/yudao/env/seata/resources
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seata-server
+  namespace: yudao
+spec:
+  selector:
+    app: seata-server
+  ports:
+    - name: server
+      port: 8091
+      targetPort: 8091
+    - name: dashboard
+      port: 7091
+      targetPort: 7091

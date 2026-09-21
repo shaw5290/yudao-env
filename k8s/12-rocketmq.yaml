@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rocketmq-namesrv-logs
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rocketmq-broker-logs
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rocketmq-broker-store
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-namesrv
+  namespace: yudao
+  labels:
+    app: rocketmq-namesrv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-namesrv
+  template:
+    metadata:
+      labels:
+        app: rocketmq-namesrv
+    spec:
+      containers:
+        - name: rocketmq-namesrv
+          image: apache/rocketmq:5.3.1
+          command: ["sh", "mqnamesrv"]
+          ports:
+            - containerPort: 9876
+              hostPort: 9876   # 对应 .env 的 ROCKETMQ_NAMESRV_PORT
+          env:
+            - name: JAVA_OPT_EXT
+              value: "-Xms256m -Xmx256m"
+          volumeMounts:
+            - name: logs
+              mountPath: /home/rocketmq/logs
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: rocketmq-namesrv-logs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-namesrv
+  namespace: yudao
+spec:
+  selector:
+    app: rocketmq-namesrv
+  ports:
+    - port: 9876
+      targetPort: 9876
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-broker
+  namespace: yudao
+  labels:
+    app: rocketmq-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-broker
+  template:
+    metadata:
+      labels:
+        app: rocketmq-broker
+    spec:
+      containers:
+        - name: rocketmq-broker
+          image: apache/rocketmq:5.3.1
+          command: ["sh", "mqbroker", "-n", "rocketmq-namesrv:9876", "-c", "/home/rocketmq/conf/broker.conf"]
+          ports:
+            - containerPort: 10911
+              hostPort: 10911   # 对应 .env 的 ROCKETMQ_BROKER_PORT
+            - containerPort: 10909
+              hostPort: 10909   # 对应 .env 的 ROCKETMQ_BROKER_VIP_PORT
+          env:
+            - name: NAMESRV_ADDR
+              value: rocketmq-namesrv:9876   # k8s Service 名
+            - name: JAVA_OPT_EXT
+              value: "-Xms512m -Xmx512m"
+          volumeMounts:
+            - name: logs
+              mountPath: /home/rocketmq/logs
+            - name: store
+              mountPath: /home/rocketmq/store
+            - name: conf
+              mountPath: /home/rocketmq/conf/broker.conf
+              subPath: broker.conf
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: rocketmq-broker-logs
+        - name: store
+          persistentVolumeClaim:
+            claimName: rocketmq-broker-store
+        - name: conf
+          hostPath:
+            path: /run/desktop/mnt/host/d/sourceCode/yudao/env/rocketmq/broker/conf/broker.conf
+            type: FileOrCreate   # 文件不存在时创建空文件，避免 Pod 起不来；建议提前放好真实的 broker.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-broker
+  namespace: yudao
+spec:
+  selector:
+    app: rocketmq-broker
+  ports:
+    - name: broker
+      port: 10911
+      targetPort: 10911
+    - name: broker-vip
+      port: 10909
+      targetPort: 10909

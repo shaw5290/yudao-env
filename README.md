@@ -110,6 +110,31 @@ IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但
 - `33` 查看备份文件列表
 - `34` 查看当前数据库列表
 
+## Kubernetes 版本
+
+除了 `docker-compose-yudao.yaml`，`k8s/` 目录下提供了一套等价的 Kubernetes 清单 + `toggle-yudao-k8s.bat` 管理脚本，用法跟上面的 compose 版本基本一一对应。**目标环境是 Docker Desktop 自带的单节点 Kubernetes**（设置 → Kubernetes → Enable Kubernetes），其他集群（minikube/真实多节点集群）需要自行调整存储和网络部分。
+
+### 快速开始
+
+1. Docker Desktop 里启用 Kubernetes，等状态栏图标变绿。
+2. 确保 `.env` 已经存在（跟 compose 版本共用同一份 `.env`，见上文"快速开始"）。
+3. 双击运行 `toggle-yudao-k8s.bat`，选 **1（启动核心）**。脚本会自动创建 `yudao` 这个 Namespace，并从 `.env` 生成/更新一个叫 `yudao-env` 的 Secret，再 apply 核心服务清单。
+
+### 跟 compose 版本的关键差异
+
+- **端口是写死的字面量**：K8s 的 `hostPort` 字段不支持变量替换，所以 `k8s/*.yaml` 里的端口直接写成了 `.env.temp` 的默认值（3306/6379/8848/9000 等），每个端口旁边都有注释标注对应 `.env` 里的哪个变量。如果本机端口冲突，需要直接改 YAML 文件里的数字，改完 `.env` 里对应的变量仅供人工核对，不会被自动同步进 YAML。
+- **没有 `PROJECT_NAME` 前缀**：compose 版本用前缀区分同一台机器上的多套环境，K8s 版本用 `yudao` 这个 Namespace 天然隔离，资源名就是 `mysql`、`nacos` 这种简单名字，不支持多环境并存（要多套就开多个 Namespace，需要自行改清单）。
+- **数据卷**：对应 compose 里的 named volume（`mysql-data`、`nacos-data`、`minio-data` 等）都改成了 `PersistentVolumeClaim`，走 Docker Desktop 默认 StorageClass 动态供给；`mysql/initdb`、`mysql/conf`、`rocketmq/broker/conf`、`seata/resources` 这几个需要挂载仓库真实文件的，用 `hostPath` 挂载 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`（Docker Desktop for Windows 固定的宿主机路径映射规则，盘符小写）。**如果这个仓库不是放在 `D:\sourceCode\yudao\env`，需要手动把 `k8s/*.yaml` 里所有 `hostPath.path` 改成实际路径对应的映射。**
+- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `15-sentinel.yaml` 六个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
+
+### toggle-yudao-k8s.bat 菜单说明
+
+菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`26` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+- `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
+- `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
+
+数据库备份/还原（`31`-`34`）把 `docker exec %DB_CONTAINER%` 换成了 `kubectl exec deploy/mysql`，其余逻辑（`mysqldump` 参数、时间戳命名、`backups/` 目录）跟 compose 版本完全一样，两个脚本生成的备份文件可以互相还原。
+
 ## 常见问题
 
 - **`chcp`/`where`/`docker` 报"不是内部或外部命令"**：Windows 系统 PATH 缺了 `C:\Windows\System32`。脚本已经在开头临时把 `%SystemRoot%\System32` 等目录加回本进程 PATH，一般不用管；如果还报错，说明系统级 PATH 环境变量本身被破坏了，需要在"编辑系统环境变量"里手动修复。

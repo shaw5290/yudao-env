@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nacos-data
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nacos-logs
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nacos-plugins
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nacos
+  namespace: yudao
+  labels:
+    app: nacos
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nacos
+  template:
+    metadata:
+      labels:
+        app: nacos
+    spec:
+      containers:
+        - name: nacos
+          image: nacos/nacos-server:v3.0.3
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8848
+              hostPort: 8848    # 对应 .env 的 NACOS_PORT
+            - containerPort: 8080
+              hostPort: 8081    # 对应 .env 的 NACOS_CONSOLE_PORT（控制台）
+            - containerPort: 9848
+              hostPort: 9848    # 对应 .env 的 NACOS_GRPC_PORT
+            - containerPort: 9849
+              hostPort: 9849    # 对应 .env 的 NACOS_GRPC_PORT_2
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 NACOS_AUTH_ENABLE/TOKEN/IDENTITY_KEY/IDENTITY_VALUE，跟镜像原生变量名一致
+          env:
+            - name: JVM_XMS
+              value: 256m
+            - name: JVM_XMX
+              value: 256m
+            - name: JVM_MS
+              value: 64m
+            - name: JVM_MMS
+              value: 64m
+            - name: MODE
+              value: standalone
+            - name: NACOS_REPLICAS
+              value: "1"
+            - name: PREFER_HOST_MODE
+              value: ip
+            - name: NACOS_SERVER_IP
+              value: 127.0.0.1
+            - name: SPRING_DATASOURCE_PLATFORM
+              value: mysql
+            - name: MYSQL_SERVICE_HOST
+              value: mysql   # k8s Service 名，等价于 compose 里的容器名互访
+            - name: MYSQL_SERVICE_PORT
+              value: "3306"
+            - name: MYSQL_SERVICE_DB_NAME
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_DB_NAME }
+            - name: MYSQL_SERVICE_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_DB_USER }
+            - name: MYSQL_SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_DB_PASSWORD }
+            - name: MYSQL_SERVICE_DB_PARAM
+              value: "characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
+            - name: NACOS_AUTH_USER_AGENT_AUTH_WHITE_ENABLE
+              value: "1"
+          volumeMounts:
+            - name: data
+              mountPath: /home/nacos/data
+            - name: logs
+              mountPath: /home/nacos/logs
+            - name: plugins
+              mountPath: /home/nacos/plugins
+          readinessProbe:
+            httpGet:
+              path: /nacos/actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /nacos/actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nacos-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nacos-logs
+        - name: plugins
+          persistentVolumeClaim:
+            claimName: nacos-plugins
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nacos
+  namespace: yudao
+spec:
+  selector:
+    app: nacos
+  ports:
+    - name: client
+      port: 8848
+      targetPort: 8848
+    - name: console
+      port: 8080
+      targetPort: 8080
+    - name: grpc1
+      port: 9848
+      targetPort: 9848
+    - name: grpc2
+      port: 9849
+      targetPort: 9849
