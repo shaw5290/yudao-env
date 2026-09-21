@@ -1,4 +1,4 @@
-USE yudao;
+USE `ruoyi-vue-pro`;
 /*
  Navicat Premium Data Transfer
 
