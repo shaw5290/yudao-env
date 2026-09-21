@@ -53,6 +53,7 @@ echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
+echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
 echo.
 echo   数据库（备份 / 还原）：
 echo     31. 备份全部库（自动排除系统库）
@@ -72,6 +73,7 @@ if "%choice%"=="5" goto :logs
 if "%choice%"=="6" goto :rebuild
 if "%choice%"=="7" goto :profile_all_up
 if "%choice%"=="8" goto :profile_all_down
+if "%choice%"=="9" goto :stop_v
 if "%choice%"=="11" goto :minio_up
 if "%choice%"=="21" goto :minio_down
 if "%choice%"=="12" goto :rocketmq_up
@@ -116,6 +118,22 @@ if /i not "%confirm%"=="Y" (
 docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down
 echo.
 echo [完成] 已全部停止。
+pause
+goto :menu
+
+:stop_v
+echo.
+echo [警告] 此操作将停止并删除所有容器，同时删除所有命名卷（mysql-data、nacos-data、minio-data、jenkins-home 等），数据将被彻底清空且不可恢复！
+echo [提示] 如需保留数据，请先用菜单选项 31 备份数据库。
+set /p confirm=请输入 DELETE 以确认执行 down -v：
+if /i not "%confirm%"=="DELETE" (
+    echo [取消] 已取消。
+    timeout /t 1 >nul
+    goto :menu
+)
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down -v
+echo.
+echo [完成] 已停止并清空所有数据卷。
 pause
 goto :menu
 
