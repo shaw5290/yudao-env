@@ -86,6 +86,21 @@ services:
       start_period: 30s
       timeout: 10s
 
+  # ==================== TDengine（IoT 模块设备时序数据）====================
+  tdengine:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}tdengine
+    image: tdengine/tdengine:3.3.5.0
+    restart: always
+    ports:
+      - "${TDENGINE_PORT:-6041}:6041"   # taosAdapter REST/WebSocket，IoT 模块 jdbc:TAOS-WS:// 连的就是这个端口
+      - "6030:6030"                      # taosd 原生连接端口
+    environment:
+      TZ: Asia/Shanghai
+      TAOS_FQDN: tdengine
+    volumes:
+      - tdengine-data:/var/lib/taos
+      - tdengine-log:/var/log/taos
+
   # ==================== 以下均需 --profile 才启动 ====================
 
   jenkins:
@@ -225,3 +240,5 @@ volumes:
   rocketmq-broker-store:
   xxl-job-logs:
   sentinel-logs:
+  tdengine-data:
+  tdengine-log:

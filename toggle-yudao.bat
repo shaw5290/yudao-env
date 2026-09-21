@@ -37,7 +37,7 @@ echo   yudao-cloud Docker 管理菜单
 echo   配置文件: %COMPOSE_FILE%
 echo ========================================
 echo   核心服务：
-echo     1. 启动核心    (nginx/mysql/redis/nacos)
+echo     1. 启动核心    (nginx/mysql/redis/nacos/tdengine)
 echo     2. 停止全部    (含所有 profile)
 echo     3. 重启核心
 echo     4. 查看状态    (所有服务)
@@ -280,6 +280,7 @@ echo [信息] 停止 Jenkins...
 %CMD% --profile jenkins stop jenkins
 pause
 goto :menu
+
 
 REM ================= 数据库备份 =================
 :db_backup
