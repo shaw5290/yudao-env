@@ -12,9 +12,9 @@ services:
     image: mysql:8.0.21
     restart: always
     volumes:
-      - ./mysql/data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
       - ./mysql/conf:/etc/mysql/conf.d:rw
-      - ./mysql/error_log:/var/log
+      - mysql-log:/var/log
       - ./mysql/initdb:/docker-entrypoint-initdb.d:ro    # ← 新增
     ports:
       - "${MYSQL_PORT}:3306"
@@ -76,9 +76,9 @@ services:
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
       NACOS_AUTH_USER_AGENT_AUTH_WHITE_ENABLE: 1
     volumes:
-      - ./nacos/logs:/home/nacos/logs
-      - ./nacos/plugins:/home/nacos/plugins
-      - ./nacos/data:/home/nacos/data
+      - nacos-logs:/home/nacos/logs
+      - nacos-plugins:/home/nacos/plugins
+      - nacos-data:/home/nacos/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/nacos/actuator/health"]
       interval: 30s
@@ -105,7 +105,7 @@ services:
         -Dhudson.model.LoadStatistics.decay=0.1
         -Djava.awt.headless=true
     volumes:
-      - ./jenkins/jenkins_home:/var/jenkins_home
+      - jenkins-home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
 
@@ -122,7 +122,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
-      - ./minio/data:/data
+      - minio-data:/data
 
   rocketmq-namesrv:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-namesrv
@@ -135,7 +135,7 @@ services:
       JAVA_OPT_EXT: "-Xms256m -Xmx256m"
     command: sh mqnamesrv
     volumes:
-      - ./rocketmq/namesrv/logs:/home/rocketmq/logs
+      - rocketmq-namesrv-logs:/home/rocketmq/logs
 
   rocketmq-broker:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-broker
@@ -152,8 +152,8 @@ services:
       JAVA_OPT_EXT: "-Xms512m -Xmx512m"
     command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/conf/broker.conf
     volumes:
-      - ./rocketmq/broker/logs:/home/rocketmq/logs
-      - ./rocketmq/broker/store:/home/rocketmq/store
+      - rocketmq-broker-logs:/home/rocketmq/logs
+      - rocketmq-broker-store:/home/rocketmq/store
       - ./rocketmq/broker/conf/broker.conf:/home/rocketmq/conf/broker.conf
 
   xxl-job-admin:
@@ -172,7 +172,7 @@ services:
         --spring.datasource.username=root
         --spring.datasource.password=${MYSQL_ROOT_PASSWORD}
     volumes:
-      - ./xxl-job/logs:/data/applogs
+      - xxl-job-logs:/data/applogs
 
   seata-server:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}seata-server
@@ -210,4 +210,18 @@ services:
     environment:
       JAVA_OPTS: "-Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard"
     volumes:
-      - ./sentinel/logs:/root/logs
+      - sentinel-logs:/root/logs
+
+volumes:
+  mysql-data:
+  mysql-log:
+  nacos-data:
+  nacos-logs:
+  nacos-plugins:
+  jenkins-home:
+  minio-data:
+  rocketmq-namesrv-logs:
+  rocketmq-broker-logs:
+  rocketmq-broker-store:
+  xxl-job-logs:
+  sentinel-logs:
