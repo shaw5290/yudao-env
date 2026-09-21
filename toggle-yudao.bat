@@ -5,6 +5,8 @@ REM chcp 65001 >nul
 
 setlocal enabledelayedexpansion
 cd /d %~dp0
+REM ---- 修复环境 PATH 缺失 System32 导致 chcp/where 不可用（仅本进程生效，不改系统全局环境） ----
+set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0\;%PATH%"
 
 set COMPOSE_FILE=docker-compose-yudao.yaml
 set CMD=docker compose -f %COMPOSE_FILE%
