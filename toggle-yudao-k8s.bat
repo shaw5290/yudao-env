@@ -48,6 +48,7 @@ echo     3. 重启核心    (rollout restart)
 echo     4. 查看状态    (所有 Pod / Service)
 echo     5. 查看日志    (输入 Deployment 名)
 echo     6. 强制重建    (重新 apply 全部核心清单 + 重启)
+echo     10. 启动核心+PostgreSQL (核心服务再加上 PostgreSQL)
 echo.
 echo   中间件（单独启停）：
 echo     11. 启动 MinIO          21. 停止 MinIO
@@ -56,6 +57,7 @@ echo     13. 启动 XXL-Job        23. 停止 XXL-Job
 echo     14. 启动 Seata          24. 停止 Seata
 echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
+echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 清空所有数据卷 (PVC，危险！会删除所有数据)
@@ -76,6 +78,7 @@ if "%choice%"=="3" goto :restart
 if "%choice%"=="4" goto :status
 if "%choice%"=="5" goto :logs
 if "%choice%"=="6" goto :rebuild
+if "%choice%"=="10" goto :start_with_postgres
 if "%choice%"=="7" goto :profile_all_up
 if "%choice%"=="8" goto :profile_all_down
 if "%choice%"=="9" goto :wipe_pvc
@@ -91,6 +94,8 @@ if "%choice%"=="15" goto :sentinel_up
 if "%choice%"=="25" goto :sentinel_down
 if "%choice%"=="16" goto :jenkins_up
 if "%choice%"=="26" goto :jenkins_down
+if "%choice%"=="17" goto :postgres_up
+if "%choice%"=="27" goto :postgres_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -185,11 +190,22 @@ echo.
 pause
 goto :menu
 
+:start_with_postgres
+echo.
+echo [信息] 正在启动核心服务 + PostgreSQL...
+kubectl apply -f %K8S_DIR%\00-namespace.yaml
+call :sync_secret
+kubectl apply -f %K8S_DIR%\01-mysql.yaml -f %K8S_DIR%\02-redis.yaml -f %K8S_DIR%\03-nacos.yaml -f %K8S_DIR%\04-tdengine.yaml -f %K8S_DIR%\05-nginx.yaml -f %K8S_DIR%\16-postgres.yaml
+kubectl get pods -n %NAMESPACE%
+echo.
+pause
+goto :menu
+
 REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-kubectl apply -f %K8S_DIR%\10-jenkins.yaml -f %K8S_DIR%\11-minio.yaml -f %K8S_DIR%\12-rocketmq.yaml -f %K8S_DIR%\13-xxljob.yaml -f %K8S_DIR%\14-seata.yaml -f %K8S_DIR%\15-sentinel.yaml
+kubectl apply -f %K8S_DIR%\10-jenkins.yaml -f %K8S_DIR%\11-minio.yaml -f %K8S_DIR%\12-rocketmq.yaml -f %K8S_DIR%\13-xxljob.yaml -f %K8S_DIR%\14-seata.yaml -f %K8S_DIR%\15-sentinel.yaml -f %K8S_DIR%\16-postgres.yaml
 kubectl get pods -n %NAMESPACE%
 echo.
 pause
@@ -198,7 +214,7 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件（保留数据卷）...
-kubectl delete deployment/jenkins service/jenkins deployment/minio service/minio deployment/rocketmq-namesrv service/rocketmq-namesrv deployment/rocketmq-broker service/rocketmq-broker deployment/xxl-job-admin service/xxl-job-admin deployment/seata-server service/seata-server deployment/sentinel-dashboard service/sentinel-dashboard -n %NAMESPACE% --ignore-not-found
+kubectl delete deployment/jenkins service/jenkins deployment/minio service/minio deployment/rocketmq-namesrv service/rocketmq-namesrv deployment/rocketmq-broker service/rocketmq-broker deployment/xxl-job-admin service/xxl-job-admin deployment/seata-server service/seata-server deployment/sentinel-dashboard service/sentinel-dashboard deployment/postgres service/postgres -n %NAMESPACE% --ignore-not-found
 echo.
 echo [完成] 中间件已全部停止。
 pause
@@ -276,6 +292,21 @@ goto :menu
 echo.
 echo [信息] 停止 Sentinel Dashboard...
 kubectl delete deployment/sentinel-dashboard service/sentinel-dashboard -n %NAMESPACE% --ignore-not-found
+pause
+goto :menu
+
+REM ================= PostgreSQL =================
+:postgres_up
+echo.
+echo [信息] 启动 PostgreSQL...
+kubectl apply -f %K8S_DIR%\16-postgres.yaml
+pause
+goto :menu
+
+:postgres_down
+echo.
+echo [信息] 停止 PostgreSQL...
+kubectl delete deployment/postgres service/postgres -n %NAMESPACE% --ignore-not-found
 pause
 goto :menu
 

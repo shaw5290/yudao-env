@@ -43,6 +43,7 @@ echo     3. 重启核心
 echo     4. 查看状态    (所有服务)
 echo     5. 查看日志    (核心服务)
 echo     6. 强制重建    (核心服务)
+echo     10. 启动核心+PostgreSQL (核心服务再加上 PostgreSQL)
 echo.
 echo   中间件（单独启停）：
 echo     11. 启动 MinIO          21. 停止 MinIO
@@ -51,6 +52,7 @@ echo     13. 启动 XXL-Job        23. 停止 XXL-Job
 echo     14. 启动 Seata          24. 停止 Seata
 echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
+echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -71,6 +73,7 @@ if "%choice%"=="3" goto :restart
 if "%choice%"=="4" goto :status
 if "%choice%"=="5" goto :logs
 if "%choice%"=="6" goto :rebuild
+if "%choice%"=="10" goto :start_with_postgres
 if "%choice%"=="7" goto :profile_all_up
 if "%choice%"=="8" goto :profile_all_down
 if "%choice%"=="9" goto :stop_v
@@ -86,6 +89,8 @@ if "%choice%"=="15" goto :sentinel_up
 if "%choice%"=="25" goto :sentinel_down
 if "%choice%"=="16" goto :jenkins_up
 if "%choice%"=="26" goto :jenkins_down
+if "%choice%"=="17" goto :postgres_up
+if "%choice%"=="27" goto :postgres_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -115,7 +120,7 @@ if /i not "%confirm%"=="Y" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres down
 echo.
 echo [完成] 已全部停止。
 pause
@@ -131,7 +136,7 @@ if /i not "%confirm%"=="DELETE" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down -v
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres down -v
 echo.
 echo [完成] 已停止并清空所有数据卷。
 pause
@@ -150,7 +155,7 @@ goto :menu
 :status
 echo.
 echo [信息] 所有服务状态：
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel ps
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres ps
 echo.
 pause
 goto :menu
@@ -172,12 +177,21 @@ echo.
 pause
 goto :menu
 
+:start_with_postgres
+echo.
+echo [信息] 正在启动核心服务 + PostgreSQL...
+%CMD% --profile postgres up -d --build
+%CMD% --profile postgres ps
+echo.
+pause
+goto :menu
+
 REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins up -d
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel ps
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres up -d
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres ps
 echo.
 pause
 goto :menu
@@ -185,7 +199,7 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins down
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres down
 echo.
 echo [完成] 中间件已全部停止。
 pause
@@ -263,6 +277,21 @@ goto :menu
 echo.
 echo [信息] 停止 Sentinel Dashboard...
 %CMD% --profile sentinel stop sentinel-dashboard
+pause
+goto :menu
+
+REM ================= PostgreSQL =================
+:postgres_up
+echo.
+echo [信息] 启动 PostgreSQL...
+%CMD% --profile postgres up -d postgres
+pause
+goto :menu
+
+:postgres_down
+echo.
+echo [信息] 停止 PostgreSQL...
+%CMD% --profile postgres stop postgres
 pause
 goto :menu
 
