@@ -32,6 +32,7 @@ services:
       --max_connections=2000
       --wait_timeout=20000
       --default-authentication-plugin=mysql_native_password
+      --skip-name-resolve
 
   redis:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}redis
@@ -87,6 +88,7 @@ services:
       timeout: 10s
 
   # ==================== TDengine（IoT 模块设备时序数据）====================
+  # 默认账号密码固定为 root/taosdata（镜像不支持通过环境变量修改），对应 ${TDENGINE_USERNAME}/${TDENGINE_PASSWORD}
   tdengine:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}tdengine
     image: tdengine/tdengine:3.3.6.0
