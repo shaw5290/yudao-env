@@ -47,6 +47,7 @@ services:
     container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}nacos
     image: nacos/nacos-server:v3.0.3
     restart: always
+    profiles: ["nacos"]
     depends_on:
       - mysql
     ports:

@@ -37,7 +37,7 @@ echo   yudao-cloud Docker 管理菜单
 echo   配置文件: %COMPOSE_FILE%
 echo ========================================
 echo   核心服务：
-echo     1. 启动核心    (nginx/mysql/redis/nacos/tdengine)
+echo     1. 启动核心    (nginx/mysql/redis/tdengine)
 echo     2. 停止全部    (含所有 profile)
 echo     3. 重启核心
 echo     4. 查看状态    (所有服务)
@@ -53,6 +53,7 @@ echo     14. 启动 Seata          24. 停止 Seata
 echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
 echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
+    18. 启动 Nacos          28. 停止 Nacos
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -91,6 +92,8 @@ if "%choice%"=="16" goto :jenkins_up
 if "%choice%"=="26" goto :jenkins_down
 if "%choice%"=="17" goto :postgres_up
 if "%choice%"=="27" goto :postgres_down
+if "%choice%"=="18" goto :nacos_up
+if "%choice%"=="28" goto :nacos_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -120,7 +123,7 @@ if /i not "%confirm%"=="Y" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres down
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos down
 echo.
 echo [完成] 已全部停止。
 pause
@@ -136,7 +139,7 @@ if /i not "%confirm%"=="DELETE" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres down -v
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos down -v
 echo.
 echo [完成] 已停止并清空所有数据卷。
 pause
@@ -155,7 +158,7 @@ goto :menu
 :status
 echo.
 echo [信息] 所有服务状态：
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres ps
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos ps
 echo.
 pause
 goto :menu
@@ -181,7 +184,7 @@ goto :menu
 echo.
 echo [信息] 正在启动核心服务 + PostgreSQL...
 %CMD% --profile postgres up -d --build
-%CMD% --profile postgres ps
+%CMD% --profile postgres --profile nacos ps
 echo.
 pause
 goto :menu
@@ -190,8 +193,8 @@ REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres up -d
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres ps
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos up -d
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos ps
 echo.
 pause
 goto :menu
@@ -199,7 +202,7 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres down
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos down
 echo.
 echo [完成] 中间件已全部停止。
 pause
@@ -292,6 +295,21 @@ goto :menu
 echo.
 echo [信息] 停止 PostgreSQL...
 %CMD% --profile postgres stop postgres
+pause
+goto :menu
+
+REM ================= Nacos =================
+:nacos_up
+echo.
+echo [信息] 启动 Nacos...
+%CMD% --profile nacos up -d nacos
+pause
+goto :menu
+
+:nacos_down
+echo.
+echo [信息] 停止 Nacos...
+%CMD% --profile nacos stop nacos
 pause
 goto :menu
 
