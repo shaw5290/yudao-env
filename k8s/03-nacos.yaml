@@ -57,7 +57,7 @@ spec:
             - containerPort: 8848
               hostPort: 8848    # 对应 .env 的 NACOS_PORT
             - containerPort: 8080
-              hostPort: 8081    # 对应 .env 的 NACOS_CONSOLE_PORT（控制台）
+              hostPort: 8080    # 对应 .env 的 NACOS_CONSOLE_PORT（控制台）
             - containerPort: 9848
               hostPort: 9848    # 对应 .env 的 NACOS_GRPC_PORT
             - containerPort: 9849

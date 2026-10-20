@@ -24,14 +24,14 @@
 | nginx | `nginx:latest` | `NGINX_PORT`(80) → 80 | 无（预留，未配置站点） |
 | mysql | `mysql:8.0.21` | `MYSQL_PORT`(3306) → 3306 | `mysql-data`、`mysql-log`；绑定挂载 `./mysql/conf`、`./mysql/initdb`（只读） |
 | redis | `redis:7` | `REDIS_PORT`(6379) → 6379 | 无（未持久化） |
-| nacos | `nacos/nacos-server:v3.0.3` | `NACOS_PORT`(8848) → 8848；`NACOS_CONSOLE_PORT`(8081) → 8080；`NACOS_GRPC_PORT`(9848) → 9848；`NACOS_GRPC_PORT_2`(9849) → 9849 | `nacos-logs`、`nacos-plugins`、`nacos-data` |
+| nacos | `nacos/nacos-server:v3.0.3` | `NACOS_PORT`(8848) → 8848；`NACOS_CONSOLE_PORT`(8080) → 8080；`NACOS_GRPC_PORT`(9848) → 9848；`NACOS_GRPC_PORT_2`(9849) → 9849 | `nacos-logs`、`nacos-plugins`、`nacos-data` |
 | tdengine | `tdengine/tdengine:3.3.6.0` | `TDENGINE_PORT`(6041，缺省也是 6041) → 6041（taosAdapter REST/WebSocket）；6030 → 6030（taosd 原生端口，写死） | `tdengine-data`、`tdengine-log` |
 
 可选中间件（需要 `--profile <name>`）：
 
 | 服务 | 镜像 | profile | 宿主机端口变量（默认值）→ 容器端口 | 卷 |
 |---|---|---|---|---|
-| jenkins | `jenkins/jenkins:lts` | `jenkins` | `JENKINS_PORT`(8080) → 8080 | `jenkins-home`；绑定挂载 `/var/run/docker.sock`、`/usr/bin/docker` |
+| jenkins | `jenkins/jenkins:lts` | `jenkins` | `JENKINS_PORT`(8089) → 8080（避开 Nacos 控制台的 8080） | `jenkins-home`；绑定挂载 `/var/run/docker.sock`、`/usr/bin/docker` |
 | minio | `minio/minio:latest` | `minio` | `MINIO_PORT`(9000) → 9000；`MINIO_CONSOLE_PORT`(9001) → 9001 | `minio-data` |
 | rocketmq-namesrv | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_NAMESRV_PORT`(9876) → 9876 | `rocketmq-namesrv-logs` |
 | rocketmq-broker | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_BROKER_PORT`(10911) → 10911；`ROCKETMQ_BROKER_VIP_PORT`(10909) → 10909 | `rocketmq-broker-logs`、`rocketmq-broker-store`；绑定挂载 `./rocketmq/broker/conf/broker.conf` |
@@ -344,8 +344,8 @@ kubectl apply --dry-run=client -f k8s/
 
 ### Nacos 端口冲突 / 与 IDEA 内嵌 Nacos 冲突
 
-原因：Nacos 3.x 控制台在容器内是 8080，compose 映射到宿主机 `NACOS_CONSOLE_PORT`（默认 8081），以避开 Jenkins 的 8080。若同时启动 IDEA 运行配置 `NacosServerApplication`（内嵌 Nacos，控制台 8080），两者都会占用 8848 / 9848 / 9849。
-解决：docker 化的 Nacos 与 IDEA 内嵌 Nacos 二选一，不要同时启动；控制台访问 `http://127.0.0.1:8081`。
+原因：docker 化的 Nacos 与 IDEA 运行配置 `NacosServerApplication`（yudao-cloud 内嵌 Nacos）使用相同的端口：服务 8848、控制台 8080（`NACOS_CONSOLE_PORT`）、gRPC 9848 / 9849。两者设计上二选一，同时启动必然端口冲突。Jenkins 默认映射到 8089（`JENKINS_PORT`），不占用 8080；如果本地 `.env` 是从旧模板复制的，可能仍是 `NACOS_CONSOLE_PORT=8081`、`JENKINS_PORT=8080`，需要手工改成 8080、8089。
+解决：两套 Nacos 只启动一套；控制台统一访问 `http://127.0.0.1:8080`。
 
 ### Nacos 容器启动即退出（exit 255）
 

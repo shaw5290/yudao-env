@@ -33,7 +33,7 @@ spec:
           image: jenkins/jenkins:lts
           ports:
             - containerPort: 8080
-              hostPort: 8080   # 对应 .env 的 JENKINS_PORT
+              hostPort: 8089   # 对应 .env 的 JENKINS_PORT（避开 Nacos 控制台 8080）
           env:
             - name: TZ
               value: Asia/Shanghai

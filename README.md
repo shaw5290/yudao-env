@@ -38,14 +38,14 @@ env/
 | nginx | nginx:latest | `NGINX_PORT`→80 | 预留，未配置站点 |
 | mysql | mysql:8.0.21 | `MYSQL_PORT`→3306 | root / `MYSQL_ROOT_PASSWORD` |
 | redis | redis:7 | `REDIS_PORT`→6379 | 密码见 `REDIS_PASSWORD`，留空则不鉴权 |
-| nacos | nacos/nacos-server:v3.0.3 | `NACOS_PORT`(8848) / `NACOS_CONSOLE_PORT`(8081，容器内 8080) / `NACOS_GRPC_PORT`(9848) / `NACOS_GRPC_PORT_2`(9849) | 持久化到 MySQL，见下方"Nacos"说明 |
+| nacos | nacos/nacos-server:v3.0.3 | `NACOS_PORT`(8848) / `NACOS_CONSOLE_PORT`(8080) / `NACOS_GRPC_PORT`(9848) / `NACOS_GRPC_PORT_2`(9849) | 持久化到 MySQL，见下方"Nacos"说明 |
 | tdengine | tdengine/tdengine:3.3.6.0 | `TDENGINE_PORT`(6041，taosAdapter REST/WebSocket) / 6030（taosd 原生端口） | IoT 模块设备时序数据库，见下方"TDengine"说明 |
 
 ### 可选中间件（需要 `--profile <name>`，`toggle-yudao.bat` 菜单已封装）
 
 | 服务 | 镜像 | 默认端口 | profile |
 |---|---|---|---|
-| jenkins | jenkins/jenkins:lts | `JENKINS_PORT`→8080 | jenkins |
+| jenkins | jenkins/jenkins:lts | `JENKINS_PORT`(8089)→8080 | jenkins |
 | minio | minio/minio:latest | `MINIO_PORT`(9000) / `MINIO_CONSOLE_PORT`(9001) | minio |
 | rocketmq-namesrv / rocketmq-broker | apache/rocketmq:5.3.1 | `ROCKETMQ_NAMESRV_PORT`(9876) / `ROCKETMQ_BROKER_PORT`(10911) / `ROCKETMQ_BROKER_VIP_PORT`(10909) | rocketmq |
 | xxl-job-admin | xuxueli/xxl-job-admin:2.4.1 | `XXL_JOB_PORT`→8080 | xxl-job |
@@ -71,7 +71,7 @@ env/
 
 ## Nacos
 
-- 应用连接地址：`127.0.0.1:${NACOS_PORT}`（默认 8848），控制台：`http://127.0.0.1:${NACOS_CONSOLE_PORT}`（默认 8081）。
+- 应用连接地址：`127.0.0.1:${NACOS_PORT}`（默认 8848），控制台：`http://127.0.0.1:${NACOS_CONSOLE_PORT}`（默认 8080，与 IDEA 内嵌 Nacos 相同；两者二选一启动）。
 - 已预置 `dev` / `test` / `prod` 三个命名空间（`mysql/initdb/02-nacos-schema.sql` 里插入的 `tenant_info` 记录），对应各服务 `application-{profile}.yaml` 里的 `spring.cloud.nacos.*.namespace` 配置，开箱即用。
 - **鉴权变量必须都填，不能留空**：`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE` 这三个哪怕不启用鉴权（`NACOS_AUTH_ENABLE` 可以注释/关闭）也必须有值，否则镜像启动脚本会直接 `exit 255`。`NACOS_AUTH_TOKEN` 需要 Base64 编码的 32 字节字符串，生成命令：
   ```bash
