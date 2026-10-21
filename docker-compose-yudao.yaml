@@ -1,7 +1,7 @@
 name: yudao
 services:
   mysql:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}mysql
+    container_name: ${PROJECT_NAME:-yudao}-mysql
     image: mysql:8.0.21
     restart: always
     volumes:
@@ -10,11 +10,11 @@ services:
       - mysql-log:/var/log
       - ./mysql/initdb:/docker-entrypoint-initdb.d:ro    # ← 新增
     ports:
-      - "${MYSQL_PORT}:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     environment:
       TZ: Asia/Shanghai
       LANG: C.UTF-8
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
     command:
       mysqld
       --character-set-server=utf8mb4
@@ -28,36 +28,36 @@ services:
       --skip-name-resolve
 
   redis:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}redis
+    container_name: ${PROJECT_NAME:-yudao}-redis
     image: redis:7
     restart: always
     ports:
-      - "${REDIS_PORT}:6379"
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
 
   # ==================== 以下均需 --profile 才启动 ====================
 
   nginx:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}nginx
+    container_name: ${PROJECT_NAME:-yudao}-nginx
     image: nginx:latest
     restart: always
     profiles: ["nginx"]
     ports:
-      - "${NGINX_PORT}:80"
+      - "${NGINX_PORT:-80}:80"
 
   # ==================== Nacos 3.x（控制台端口 8080）====================
   nacos:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}nacos
+    container_name: ${PROJECT_NAME:-yudao}-nacos
     image: nacos/nacos-server:v3.0.3
     restart: always
     profiles: ["nacos"]
     depends_on:
       - mysql
     ports:
-      - "${NACOS_PORT}:8848"
-      - "${NACOS_CONSOLE_PORT}:8080"
-      - "${NACOS_GRPC_PORT}:9848"
-      - "${NACOS_GRPC_PORT_2}:9849"
+      - "${NACOS_PORT:-8848}:8848"
+      - "${NACOS_CONSOLE_PORT:-8080}:8080"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+      - "${NACOS_GRPC_PORT_2:-9849}:9849"
     privileged: true
     environment:
       JVM_XMS: 256m
@@ -71,14 +71,14 @@ services:
       SPRING_DATASOURCE_PLATFORM: mysql
       MYSQL_SERVICE_HOST: mysql
       MYSQL_SERVICE_PORT: 3306
-      MYSQL_SERVICE_DB_NAME: ${NACOS_DB_NAME}
-      MYSQL_SERVICE_USER: ${NACOS_DB_USER}
-      MYSQL_SERVICE_PASSWORD: ${NACOS_DB_PASSWORD}
+      MYSQL_SERVICE_DB_NAME: ${NACOS_DB_NAME:-nacos}
+      MYSQL_SERVICE_USER: ${NACOS_DB_USER:-nacos}
+      MYSQL_SERVICE_PASSWORD: ${NACOS_DB_PASSWORD:-123456}
       MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE}
-      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
-      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY}
-      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
+      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE:-false}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-MVykIz83uHdNY7BAZWAC23eDPLVLDqaFBft1EOsmqFE=}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-yudao}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-yudao}
       NACOS_AUTH_USER_AGENT_AUTH_WHITE_ENABLE: 1
     volumes:
       - nacos-logs:/home/nacos/logs
@@ -94,7 +94,7 @@ services:
   # ==================== TDengine（IoT 模块设备时序数据）====================
   # 默认账号密码固定为 root/taosdata（镜像不支持通过环境变量修改），对应 ${TDENGINE_USERNAME}/${TDENGINE_PASSWORD}
   tdengine:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}tdengine
+    container_name: ${PROJECT_NAME:-yudao}-tdengine
     image: tdengine/tdengine:3.3.6.0
     restart: always
     profiles: ["tdengine"]
@@ -109,13 +109,13 @@ services:
       - tdengine-log:/var/log/taos
 
   jenkins:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}jenkins
+    container_name: ${PROJECT_NAME:-yudao}-jenkins
     image: jenkins/jenkins:lts
     restart: always
     user: root
     profiles: ["jenkins"]
     ports:
-      - "${JENKINS_PORT}:8080"
+      - "${JENKINS_PORT:-8089}:8080"
     environment:
       TZ: Asia/Shanghai
       JAVA_OPTS: >-
@@ -130,7 +130,7 @@ services:
       - /usr/bin/docker:/usr/bin/docker
 
   postgres:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}postgres
+    container_name: ${PROJECT_NAME:-yudao}-postgres
     image: postgres:16-alpine
     restart: always
     profiles: ["postgres"]
@@ -140,7 +140,7 @@ services:
       TZ: Asia/Shanghai
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - postgres-log:/var/log/postgresql
@@ -150,27 +150,27 @@ services:
         max-file: "3"
 
   minio:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}minio
+    container_name: ${PROJECT_NAME:-yudao}-minio
     image: minio/minio:latest
     restart: always
     profiles: ["minio"]
     ports:
-      - "${MINIO_PORT}:9000"
-      - "${MINIO_CONSOLE_PORT}:9001"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
 
   rocketmq-namesrv:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-namesrv
+    container_name: ${PROJECT_NAME:-yudao}-rocketmq-namesrv
     image: apache/rocketmq:5.3.1
     restart: always
     profiles: ["rocketmq"]
     ports:
-      - "${ROCKETMQ_NAMESRV_PORT}:9876"
+      - "${ROCKETMQ_NAMESRV_PORT:-9876}:9876"
     environment:
       JAVA_OPT_EXT: "-Xms256m -Xmx256m"
     command: sh mqnamesrv
@@ -178,15 +178,15 @@ services:
       - rocketmq-namesrv-logs:/home/rocketmq/logs
 
   rocketmq-broker:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}rocketmq-broker
+    container_name: ${PROJECT_NAME:-yudao}-rocketmq-broker
     image: apache/rocketmq:5.3.1
     restart: always
     profiles: ["rocketmq"]
     depends_on:
       - rocketmq-namesrv
     ports:
-      - "${ROCKETMQ_BROKER_PORT}:10911"
-      - "${ROCKETMQ_BROKER_VIP_PORT}:10909"
+      - "${ROCKETMQ_BROKER_PORT:-10911}:10911"
+      - "${ROCKETMQ_BROKER_VIP_PORT:-10909}:10909"
     environment:
       NAMESRV_ADDR: rocketmq-namesrv:9876
       JAVA_OPT_EXT: "-Xms512m -Xmx512m"
@@ -197,25 +197,25 @@ services:
       - ./rocketmq/broker/conf/broker.conf:/home/rocketmq/conf/broker.conf
 
   xxl-job-admin:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}xxl-job-admin
+    container_name: ${PROJECT_NAME:-yudao}-xxl-job-admin
     image: xuxueli/xxl-job-admin:2.4.1
     restart: always
     profiles: ["xxl-job"]
     depends_on:
       - mysql
     ports:
-      - "${XXL_JOB_PORT}:8080"
+      - "${XXL_JOB_PORT:-9090}:8080"
     environment:
       TZ: Asia/Shanghai
       PARAMS: >-
-        --spring.datasource.url=jdbc:mysql://mysql:3306/${XXL_JOB_DB_NAME}?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai&useSSL=false
+        --spring.datasource.url=jdbc:mysql://mysql:3306/${XXL_JOB_DB_NAME:-xxl_job}?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai&useSSL=false
         --spring.datasource.username=root
-        --spring.datasource.password=${MYSQL_ROOT_PASSWORD}
+        --spring.datasource.password=${MYSQL_ROOT_PASSWORD:-123456}
     volumes:
       - xxl-job-logs:/data/applogs
 
   seata-server:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}seata-server
+    container_name: ${PROJECT_NAME:-yudao}-seata-server
     image: seataio/seata-server:2.0.0
     restart: always
     profiles: ["seata"]
@@ -223,10 +223,10 @@ services:
       - nacos
       - mysql
     ports:
-      - "${SEATA_PORT}:8091"
-      - "${SEATA_DASHBOARD_PORT}:7091"
+      - "${SEATA_PORT:-8091}:8091"
+      - "${SEATA_DASHBOARD_PORT:-7091}:7091"
     environment:
-      SEATA_IP: ${SEATA_IP}
+      SEATA_IP: ${SEATA_IP:-127.0.0.1}
       SEATA_PORT: 8091
       STORE_MODE: db
       SEATA_REGISTRY_TYPE: nacos
@@ -241,12 +241,12 @@ services:
       - ./seata/resources:/seata-server/resources
 
   sentinel-dashboard:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}sentinel-dashboard
+    container_name: ${PROJECT_NAME:-yudao}-sentinel-dashboard
     image: bladex/sentinel-dashboard:1.8.8
     restart: always
     profiles: ["sentinel"]
     ports:
-      - "${SENTINEL_PORT}:8858"
+      - "${SENTINEL_PORT:-8858}:8858"
     environment:
       JAVA_OPTS: "-Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard"
     volumes:
@@ -255,14 +255,14 @@ services:
   # Grafana LGTM：OTel Collector + Loki（日志）+ Tempo（链路）+ Prometheus（指标）+ Grafana，一体化可观测性，仅用于开发测试
   # 应用通过 OTLP 上报 trace 与日志，Grafana 中可在链路与日志之间互相跳转；默认账号 admin / admin
   lgtm:
-    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}lgtm
+    container_name: ${PROJECT_NAME:-yudao}-lgtm
     image: grafana/otel-lgtm:0.37.0
     restart: always
     profiles: ["lgtm"]
     ports:
-      - "${LGTM_GRAFANA_PORT}:3000"     # Grafana 控制台
-      - "${LGTM_OTLP_GRPC_PORT}:4317"   # OTLP gRPC
-      - "${LGTM_OTLP_HTTP_PORT}:4318"   # OTLP HTTP（yudao 应用默认上报到这里）
+      - "${LGTM_GRAFANA_PORT:-3000}:3000"     # Grafana 控制台
+      - "${LGTM_OTLP_GRPC_PORT:-4317}:4317"   # OTLP gRPC
+      - "${LGTM_OTLP_HTTP_PORT:-4318}:4318"   # OTLP HTTP（yudao 应用默认上报到这里）
     environment:
       TZ: Asia/Shanghai
     volumes:

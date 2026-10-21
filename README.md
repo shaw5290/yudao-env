@@ -21,7 +21,7 @@ env/
 ## 快速开始
 
 1. 安装 Docker Desktop（Windows 下需开启 WSL2 后端），确认 `docker` 命令能在终端直接用。
-2. 复制环境变量模板并按需修改：
+2. （可选）不建 `.env` 也能直接启动：compose 中所有变量都带本地开发缺省值（端口为默认端口；MySQL root、Nacos/Seata 的 MySQL 用户口令与 `toggle-yudao.bat`、`01-create-databases.sql` 一致；Redis 无密码；Nacos 鉴权关闭；`SEATA_IP=127.0.0.1`）。需要自定义时复制环境变量模板并按需修改：
    ```bash
    copy .env.temp .env
    ```

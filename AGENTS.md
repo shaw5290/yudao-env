@@ -40,7 +40,7 @@
 | sentinel-dashboard | `bladex/sentinel-dashboard:1.8.8` | `sentinel` | `SENTINEL_PORT`(8858) → 8858 | `sentinel-logs` |
 | lgtm | `grafana/otel-lgtm:0.37.0` | `lgtm` | `LGTM_GRAFANA_PORT`(3000) → 3000（Grafana）；`LGTM_OTLP_GRPC_PORT`(4317) → 4317；`LGTM_OTLP_HTTP_PORT`(4318) → 4318 | `lgtm-data` |
 
-依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 留空时就是服务名。
+依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 未配置或留空时默认 `yudao`。
 
 ### `.env.temp` 变量（只列变量名）
 
@@ -62,7 +62,7 @@
 前置条件：Windows + Docker Desktop（WSL2 后端）；使用 K8s 版本时需在 Docker Desktop 里启用 Kubernetes。
 
 ```bat
-:: 1. 复制环境变量模板，按需修改（.env 不提交）
+:: 1. 复制环境变量模板，按需修改（.env 不提交）；不建 .env 时使用 compose 中的本地开发缺省值
 copy .env.temp .env
 
 :: 2. 交互式管理（Compose 版 / K8s 版），双击或在 cmd 中运行
@@ -188,9 +188,9 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 ### Docker Compose（`docker-compose-yudao.yaml`）
 
 - 2 空格缩进；服务顺序为核心服务在前，可选中间件放在 `# ==================== 以下均需 --profile 才启动 ====================` 分隔注释之后。
-- 每个服务都写 `container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}<服务名>` 和 `restart: always`。
-- 端口一律用 `.env` 变量映射：`"${XXX_PORT}:<容器端口>"`，带引号；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
-- 敏感信息只通过 `${VAR}` 引用，不在 compose 中写字面量。
+- 每个服务都写 `container_name: ${PROJECT_NAME:-yudao}-<服务名>` 和 `restart: always`。
+- 端口一律用 `.env` 变量映射并带缺省值：`"${XXX_PORT:-<默认端口>}:<容器端口>"`，带引号，缺省值与 `.env.temp` 一致（`.env` 未配置时仍使用默认端口，而不是随机端口）；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
+- 所有变量都写成 `${VAR:-<缺省值>}`，保证没有 `.env` 也能直接启动；口令类缺省值只用于本地开发，须与 `toggle-yudao.bat` 的 `DB_PASSWORD`、`mysql/initdb/01-create-databases.sql` 中的用户口令保持一致。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
 - 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
