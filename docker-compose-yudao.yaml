@@ -250,6 +250,22 @@ services:
     volumes:
       - sentinel-logs:/root/logs
 
+  # Grafana LGTM：OTel Collector + Loki（日志）+ Tempo（链路）+ Prometheus（指标）+ Grafana，一体化可观测性，仅用于开发测试
+  # 应用通过 OTLP 上报 trace 与日志，Grafana 中可在链路与日志之间互相跳转；默认账号 admin / admin
+  lgtm:
+    container_name: ${PROJECT_NAME:+${PROJECT_NAME}-}lgtm
+    image: grafana/otel-lgtm:0.37.0
+    restart: always
+    profiles: ["lgtm"]
+    ports:
+      - "${LGTM_GRAFANA_PORT}:3000"     # Grafana 控制台
+      - "${LGTM_OTLP_GRPC_PORT}:4317"   # OTLP gRPC
+      - "${LGTM_OTLP_HTTP_PORT}:4318"   # OTLP HTTP（yudao 应用默认上报到这里）
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - lgtm-data:/data
+
 volumes:
   mysql-data:
   mysql-log:
@@ -266,4 +282,5 @@ volumes:
   tdengine-data:
   tdengine-log:
   postgres-data:
+  lgtm-data:
   postgres-log:

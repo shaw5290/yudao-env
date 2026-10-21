@@ -1,0 +1,70 @@
+# Grafana LGTM：OTel Collector + Loki（日志）+ Tempo（链路）+ Prometheus（指标）+ Grafana，仅用于开发测试
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lgtm-data
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  namespace: yudao
+  labels:
+    app: lgtm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: lgtm
+  template:
+    metadata:
+      labels:
+        app: lgtm
+    spec:
+      containers:
+        - name: lgtm
+          image: grafana/otel-lgtm:0.37.0
+          ports:
+            - containerPort: 3000
+              hostPort: 3000   # 对应 .env 的 LGTM_GRAFANA_PORT，冲突时改这里
+            - containerPort: 4317
+              hostPort: 4317   # 对应 .env 的 LGTM_OTLP_GRPC_PORT
+            - containerPort: 4318
+              hostPort: 4318   # 对应 .env 的 LGTM_OTLP_HTTP_PORT
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lgtm-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+  namespace: yudao
+spec:
+  selector:
+    app: lgtm
+  ports:
+    - name: grafana
+      port: 3000
+      targetPort: 3000
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318

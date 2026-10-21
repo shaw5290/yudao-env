@@ -1,6 +1,6 @@
 # yudao-env
 
-`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis、Nacos、TDengine 等核心依赖，以及 Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL 等可选中间件。
+`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis、Nacos、TDengine 等核心依赖，以及 Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL、Grafana LGTM 等可选中间件。
 
 ## 目录结构
 
@@ -52,8 +52,11 @@ env/
 | seata-server | seataio/seata-server:2.0.0 | `SEATA_PORT`(8091) / `SEATA_DASHBOARD_PORT`(7091) | seata |
 | sentinel-dashboard | bladex/sentinel-dashboard:1.8.8 | `SENTINEL_PORT`→8858 | sentinel |
 | postgres | postgres:16-alpine | `POSTGRES_PORT`→5432 | postgres |
+| lgtm | grafana/otel-lgtm:0.37.0 | `LGTM_GRAFANA_PORT`(3000) / `LGTM_OTLP_GRPC_PORT`(4317) / `LGTM_OTLP_HTTP_PORT`(4318) | lgtm |
 
 > `postgres` 是一个通用的空实例，当前 yudao-cloud 各模块默认都用 MySQL，没有服务依赖它；只有本地需要额外用到 PostgreSQL（自己的服务、调试其他项目等）时才需要启动，库名/账号密码见 `.env` 里的 `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`。
+
+> `lgtm` 是 Grafana 官方的一体化可观测性镜像（OTel Collector + Loki 日志 + Tempo 链路 + Prometheus 指标 + Grafana），仅用于开发测试。yudao-cloud-mini 的各服务在 `application-local.yaml` 中默认把链路和日志通过 OTLP HTTP 上报到 `http://127.0.0.1:4318`。打开 Grafana `http://127.0.0.1:3000`（默认 `admin` / `admin`）→ Explore：选 Tempo 查链路，点击 span 的 "Logs for this span" 跳到该 traceId 在各服务的日志；选 Loki 查日志（如 `{service_name="system-server"} | trace_id="xxx"`），点击日志中的 `trace_id` 跳回链路。数据保存在 `lgtm-data` 卷。
 
 ## 数据库初始化
 
@@ -103,7 +106,7 @@ IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但
 - `6` 强制重建核心服务（改了镜像版本、环境变量后用这个）
 - `10` 启动核心服务 + PostgreSQL（核心服务之外再带上 PostgreSQL 一起启动，等价于 `1` 加 `17`）
 
-**中间件（单独启停）**：`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL；`7`/`8` 一键启停全部中间件。
+**中间件（单独启停）**：`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`19`/`29` Grafana LGTM；`7`/`8` 一键启停全部中间件。
 
 **危险操作**
 - `9` 停止全部并**清空所有数据卷**（`down -v`），需要手动输入 `DELETE` 二次确认。用于彻底重置环境、让 `mysql/initdb` 脚本重新执行。
@@ -129,11 +132,11 @@ IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但
 - **端口是写死的字面量**：K8s 的 `hostPort` 字段不支持变量替换，所以 `k8s/*.yaml` 里的端口直接写成了 `.env.temp` 的默认值（3306/6379/8848/9000 等），每个端口旁边都有注释标注对应 `.env` 里的哪个变量。如果本机端口冲突，需要直接改 YAML 文件里的数字，改完 `.env` 里对应的变量仅供人工核对，不会被自动同步进 YAML。
 - **没有 `PROJECT_NAME` 前缀**：compose 版本用前缀区分同一台机器上的多套环境，K8s 版本用 `yudao` 这个 Namespace 天然隔离，资源名就是 `mysql`、`nacos` 这种简单名字，不支持多环境并存（要多套就开多个 Namespace，需要自行改清单）。
 - **数据卷**：对应 compose 里的 named volume（`mysql-data`、`nacos-data`、`minio-data` 等）都改成了 `PersistentVolumeClaim`，走 Docker Desktop 默认 StorageClass 动态供给；`mysql/initdb`、`mysql/conf`、`rocketmq/broker/conf`、`seata/resources` 这几个需要挂载仓库真实文件的，用 `hostPath` 挂载 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`（Docker Desktop for Windows 固定的宿主机路径映射规则，盘符小写）。**如果这个仓库不是放在 `D:\sourceCode\yudao\env`，需要手动把 `k8s/*.yaml` 里所有 `hostPath.path` 改成实际路径对应的映射。**
-- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `16-postgres.yaml` 七个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
+- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `17-lgtm.yaml` 八个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
 
 ### toggle-yudao-k8s.bat 菜单说明
 
-菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`10` 启动核心+PostgreSQL、`11`-`27` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`10` 启动核心+PostgreSQL、`11`-`29` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
 - `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
 - `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
 

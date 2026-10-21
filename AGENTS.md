@@ -38,6 +38,7 @@
 | xxl-job-admin | `xuxueli/xxl-job-admin:2.4.1` | `xxl-job` | `XXL_JOB_PORT`(8088) → 8080 | `xxl-job-logs` |
 | seata-server | `seataio/seata-server:2.0.0` | `seata` | `SEATA_PORT`(8091) → 8091；`SEATA_DASHBOARD_PORT`(7091) → 7091 | 绑定挂载 `./seata/resources` |
 | sentinel-dashboard | `bladex/sentinel-dashboard:1.8.8` | `sentinel` | `SENTINEL_PORT`(8858) → 8858 | `sentinel-logs` |
+| lgtm | `grafana/otel-lgtm:0.37.0` | `lgtm` | `LGTM_GRAFANA_PORT`(3000) → 3000（Grafana）；`LGTM_OTLP_GRPC_PORT`(4317) → 4317；`LGTM_OTLP_HTTP_PORT`(4318) → 4318 | `lgtm-data` |
 
 依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 留空时就是服务名。
 
@@ -46,7 +47,7 @@
 | 分组 | 变量 |
 |---|---|
 | 项目 | `PROJECT_NAME` |
-| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT` |
+| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT` |
 | MySQL | `MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | Nacos 连接 MySQL | `NACOS_DB_NAME`、`NACOS_DB_USER`、`NACOS_DB_PASSWORD` |
@@ -118,7 +119,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
 | 7 / 8 | 启动 / 停止全部中间件 | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 11~16 / 21~26 | 启动 / 停止 MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins | 同左 |
+| 11~19 / 21~29 | 启动 / 停止 MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28，仅 Compose 版）、Grafana LGTM（19/29） | 同左（无 18/28） |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -191,7 +192,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射：`"${XXX_PORT}:<容器端口>"`，带引号；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
 - 敏感信息只通过 `${VAR}` 引用，不在 compose 中写字面量。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
-- 可选中间件用 `profiles: ["<name>"]`，profile 名与服务名对应（`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`）；新增 profile 时同步更新两个 bat 脚本中所有 `--profile` 列表和菜单。
+- 可选中间件用 `profiles: ["<name>"]`，profile 名与服务名对应（`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`）；新增 profile 时同步更新两个 bat 脚本中所有 `--profile` 列表和菜单。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - 时区统一 `TZ: Asia/Shanghai`；JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
@@ -257,7 +258,9 @@ yudao-env/
     ├── 12-rocketmq.yaml        # namesrv + broker
     ├── 13-xxljob.yaml
     ├── 14-seata.yaml
-    └── 15-sentinel.yaml
+    ├── 15-sentinel.yaml
+    ├── 16-postgres.yaml
+    └── 17-lgtm.yaml            # Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）
 ```
 
 compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行，需要时自行创建）：

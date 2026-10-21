@@ -53,7 +53,8 @@ echo     14. 启动 Seata          24. 停止 Seata
 echo     15. 启动 Sentinel       25. 停止 Sentinel
 echo     16. 启动 Jenkins        26. 停止 Jenkins
 echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
-    18. 启动 Nacos          28. 停止 Nacos
+echo     18. 启动 Nacos          28. 停止 Nacos
+echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -94,6 +95,8 @@ if "%choice%"=="17" goto :postgres_up
 if "%choice%"=="27" goto :postgres_down
 if "%choice%"=="18" goto :nacos_up
 if "%choice%"=="28" goto :nacos_down
+if "%choice%"=="19" goto :lgtm_up
+if "%choice%"=="29" goto :lgtm_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -123,7 +126,7 @@ if /i not "%confirm%"=="Y" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos down
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm down
 echo.
 echo [完成] 已全部停止。
 pause
@@ -139,7 +142,7 @@ if /i not "%confirm%"=="DELETE" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos down -v
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm down -v
 echo.
 echo [完成] 已停止并清空所有数据卷。
 pause
@@ -158,7 +161,7 @@ goto :menu
 :status
 echo.
 echo [信息] 所有服务状态：
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos ps
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm ps
 echo.
 pause
 goto :menu
@@ -193,8 +196,8 @@ REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos up -d
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos ps
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos --profile lgtm up -d
+docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm ps
 echo.
 pause
 goto :menu
@@ -202,7 +205,7 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos down
+docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos --profile lgtm down
 echo.
 echo [完成] 中间件已全部停止。
 pause
@@ -310,6 +313,22 @@ goto :menu
 echo.
 echo [信息] 停止 Nacos...
 %CMD% --profile nacos stop nacos
+pause
+goto :menu
+
+REM ================= Grafana LGTM =================
+:lgtm_up
+echo.
+echo [信息] 启动 Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）...
+%CMD% --profile lgtm up -d lgtm
+echo [信息] Grafana 控制台：http://127.0.0.1:3000（admin / admin），OTLP HTTP 上报地址：http://127.0.0.1:4318
+pause
+goto :menu
+
+:lgtm_down
+echo.
+echo [信息] 停止 Grafana LGTM...
+%CMD% --profile lgtm stop lgtm
 pause
 goto :menu
 

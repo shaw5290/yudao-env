@@ -15,8 +15,8 @@ BACKUP_DIR="backups"
 # 默认排除的系统库
 DB_EXCLUDE=(information_schema mysql performance_schema sys)
 
-ALL_PROFILES=(--profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres)
-SIDE_PROFILES=(--profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres)
+ALL_PROFILES=(--profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile lgtm)
+SIDE_PROFILES=(--profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm)
 
 # ---- 前置检查 ----
 if ! command -v docker >/dev/null 2>&1; then
@@ -174,6 +174,15 @@ jenkins_down() { echo; echo "[信息] 停止 Jenkins..."; "${CMD[@]}" --profile 
 postgres_up() { echo; echo "[信息] 启动 PostgreSQL..."; "${CMD[@]}" --profile postgres up -d postgres; pause; }
 postgres_down() { echo; echo "[信息] 停止 PostgreSQL..."; "${CMD[@]}" --profile postgres stop postgres; pause; }
 
+# ================= Grafana LGTM =================
+lgtm_up() {
+    echo; echo "[信息] 启动 Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）..."
+    "${CMD[@]}" --profile lgtm up -d lgtm
+    echo "[信息] Grafana 控制台：http://127.0.0.1:3000（admin / admin），OTLP HTTP 上报地址：http://127.0.0.1:4318"
+    pause
+}
+lgtm_down() { echo; echo "[信息] 停止 Grafana LGTM..."; "${CMD[@]}" --profile lgtm stop lgtm; pause; }
+
 # ================= 数据库备份 =================
 db_backup() {
     echo
@@ -309,6 +318,7 @@ menu() {
     15. 启动 Sentinel       25. 停止 Sentinel
     16. 启动 Jenkins        26. 停止 Jenkins
     17. 启动 PostgreSQL     27. 停止 PostgreSQL
+    19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 
     7. 启动全部侧车        8. 停止全部侧车
     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -352,6 +362,8 @@ while true; do
         26) jenkins_down ;;
         17) postgres_up ;;
         27) postgres_down ;;
+        19) lgtm_up ;;
+        29) lgtm_down ;;
         31) db_backup ;;
         32) db_restore ;;
         33) db_list_backups ;;
