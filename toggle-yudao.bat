@@ -10,6 +10,11 @@ set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemR
 
 set COMPOSE_FILE=docker-compose-yudao.yaml
 set CMD=docker compose -f %COMPOSE_FILE%
+REM 核心服务（不带 profile，up -d 默认只启动这些）
+set CORE_SERVICES=mysql redis
+REM 所有中间件 profile / 服务（新增中间件时同步这两行）
+set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm
+set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm
 
 REM ---- 数据库备份配置 ----
 set DB_CONTAINER=yudao-mysql
@@ -37,15 +42,15 @@ echo   yudao-cloud Docker 管理菜单
 echo   配置文件: %COMPOSE_FILE%
 echo ========================================
 echo   核心服务：
-echo     1. 启动核心    (nginx/mysql/redis/tdengine)
-echo     2. 停止全部    (含所有 profile)
+echo     1. 启动核心    (mysql/redis)
+echo     2. 停止全部    (核心 + 所有中间件)
 echo     3. 重启核心
 echo     4. 查看状态    (所有服务)
 echo     5. 查看日志    (核心服务)
 echo     6. 强制重建    (核心服务)
-echo     10. 启动核心+PostgreSQL (核心服务再加上 PostgreSQL)
 echo.
 echo   中间件（单独启停）：
+echo     10. 启动 TDengine       20. 停止 TDengine
 echo     11. 启动 MinIO          21. 停止 MinIO
 echo     12. 启动 RocketMQ       22. 停止 RocketMQ
 echo     13. 启动 XXL-Job        23. 停止 XXL-Job
@@ -55,8 +60,9 @@ echo     16. 启动 Jenkins        26. 停止 Jenkins
 echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
 echo     18. 启动 Nacos          28. 停止 Nacos
 echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
+echo     40. 启动 Nginx          50. 停止 Nginx
 echo.
-echo     7. 启动全部中间件       8. 停止全部中间件
+echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
 echo.
 echo   数据库（备份 / 还原）：
@@ -75,10 +81,11 @@ if "%choice%"=="3" goto :restart
 if "%choice%"=="4" goto :status
 if "%choice%"=="5" goto :logs
 if "%choice%"=="6" goto :rebuild
-if "%choice%"=="10" goto :start_with_postgres
 if "%choice%"=="7" goto :profile_all_up
 if "%choice%"=="8" goto :profile_all_down
 if "%choice%"=="9" goto :stop_v
+if "%choice%"=="10" goto :tdengine_up
+if "%choice%"=="20" goto :tdengine_down
 if "%choice%"=="11" goto :minio_up
 if "%choice%"=="21" goto :minio_down
 if "%choice%"=="12" goto :rocketmq_up
@@ -97,6 +104,8 @@ if "%choice%"=="18" goto :nacos_up
 if "%choice%"=="28" goto :nacos_down
 if "%choice%"=="19" goto :lgtm_up
 if "%choice%"=="29" goto :lgtm_down
+if "%choice%"=="40" goto :nginx_up
+if "%choice%"=="50" goto :nginx_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -111,9 +120,9 @@ goto :menu
 REM ================= 核心 =================
 :start
 echo.
-echo [信息] 正在启动核心服务...
-%CMD% up -d --build
-%CMD% ps
+echo [信息] 正在启动核心服务 (%CORE_SERVICES%)...
+%CMD% up -d --build %CORE_SERVICES%
+%CMD% ps %CORE_SERVICES%
 echo.
 pause
 goto :menu
@@ -126,7 +135,7 @@ if /i not "%confirm%"=="Y" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm down
+%CMD% %ALL_PROFILES% down
 echo.
 echo [完成] 已全部停止。
 pause
@@ -142,7 +151,7 @@ if /i not "%confirm%"=="DELETE" (
     timeout /t 1 >nul
     goto :menu
 )
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm down -v
+%CMD% %ALL_PROFILES% down -v
 echo.
 echo [完成] 已停止并清空所有数据卷。
 pause
@@ -150,10 +159,10 @@ goto :menu
 
 :restart
 echo.
-echo [信息] 正在重启核心服务...
-%CMD% down
-%CMD% up -d --build
-%CMD% ps
+echo [信息] 正在重启核心服务 (%CORE_SERVICES%)...
+%CMD% stop %CORE_SERVICES%
+%CMD% up -d --build %CORE_SERVICES%
+%CMD% ps %CORE_SERVICES%
 echo.
 pause
 goto :menu
@@ -161,7 +170,7 @@ goto :menu
 :status
 echo.
 echo [信息] 所有服务状态：
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm ps
+%CMD% %ALL_PROFILES% ps
 echo.
 pause
 goto :menu
@@ -169,25 +178,16 @@ goto :menu
 :logs
 echo.
 echo [信息] 核心服务日志。Ctrl+C 退出后回菜单。
-cmd /c "%CMD% logs -f"
+cmd /c "%CMD% logs -f %CORE_SERVICES%"
 echo.
 pause
 goto :menu
 
 :rebuild
 echo.
-echo [信息] 强制重建核心服务...
-%CMD% up -d --build --force-recreate
-%CMD% ps
-echo.
-pause
-goto :menu
-
-:start_with_postgres
-echo.
-echo [信息] 正在启动核心服务 + PostgreSQL...
-%CMD% --profile postgres up -d --build
-%CMD% --profile postgres --profile nacos ps
+echo [信息] 强制重建核心服务 (%CORE_SERVICES%)...
+%CMD% up -d --build --force-recreate %CORE_SERVICES%
+%CMD% ps %CORE_SERVICES%
 echo.
 pause
 goto :menu
@@ -196,8 +196,8 @@ REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos --profile lgtm up -d
-docker compose -f %COMPOSE_FILE% --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile nacos --profile lgtm ps
+%CMD% %ALL_PROFILES% up -d %MIDDLEWARE_SERVICES%
+%CMD% %ALL_PROFILES% ps
 echo.
 pause
 goto :menu
@@ -205,9 +205,24 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件...
-docker compose -f %COMPOSE_FILE% --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile nacos --profile lgtm down
+%CMD% %ALL_PROFILES% stop %MIDDLEWARE_SERVICES%
 echo.
-echo [完成] 中间件已全部停止。
+echo [完成] 中间件已全部停止（核心服务保持运行）。
+pause
+goto :menu
+
+REM ================= TDengine =================
+:tdengine_up
+echo.
+echo [信息] 启动 TDengine...
+%CMD% --profile tdengine up -d tdengine
+pause
+goto :menu
+
+:tdengine_down
+echo.
+echo [信息] 停止 TDengine...
+%CMD% --profile tdengine stop tdengine
 pause
 goto :menu
 
@@ -344,6 +359,21 @@ goto :menu
 echo.
 echo [信息] 停止 Jenkins...
 %CMD% --profile jenkins stop jenkins
+pause
+goto :menu
+
+REM ================= Nginx =================
+:nginx_up
+echo.
+echo [信息] 启动 Nginx...
+%CMD% --profile nginx up -d nginx
+pause
+goto :menu
+
+:nginx_down
+echo.
+echo [信息] 停止 Nginx...
+%CMD% --profile nginx stop nginx
 pause
 goto :menu
 

@@ -1,6 +1,6 @@
 # yudao-env
 
-`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis、Nacos、TDengine 等核心依赖，以及 Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL、Grafana LGTM 等可选中间件。
+`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis 核心依赖，以及 Nacos、TDengine、Nginx、Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL、Grafana LGTM 等可选中间件。
 
 ## 目录结构
 
@@ -27,7 +27,7 @@ env/
    ```
    必须修改的几项：`MYSQL_ROOT_PASSWORD`、`REDIS_PASSWORD`、`NACOS_DB_PASSWORD`、`NACOS_AUTH_TOKEN`（见下方"Nacos 鉴权"）、`MINIO_ROOT_PASSWORD`、`ROCKETMQ_BROKER_IP`、`SEATA_IP`、`POSTGRES_PASSWORD`（如需启用 PostgreSQL）。
 3. 双击运行 `toggle-yudao.bat`，选 **1（启动核心）**。首次启动会自动执行 `mysql/initdb` 下的建库脚本。
-4. 核心服务起来后，按需通过菜单单独启动 Jenkins / MinIO / RocketMQ / XXL-Job / Seata / Sentinel / PostgreSQL。
+4. 核心服务起来后，按需通过菜单单独启动 Nacos / TDengine / Nginx / Jenkins / MinIO / RocketMQ / XXL-Job / Seata / Sentinel / PostgreSQL。
 
 ## 服务清单
 
@@ -35,16 +35,16 @@ env/
 
 | 服务 | 镜像 | 默认端口（可在 `.env` 改） | 说明 |
 |---|---|---|---|
-| nginx | nginx:latest | `NGINX_PORT`→80 | 预留，未配置站点 |
 | mysql | mysql:8.0.21 | `MYSQL_PORT`→3306 | root / `MYSQL_ROOT_PASSWORD` |
 | redis | redis:7 | `REDIS_PORT`→6379 | 密码见 `REDIS_PASSWORD`，留空则不鉴权 |
-| nacos | nacos/nacos-server:v3.0.3 | `NACOS_PORT`(8848) / `NACOS_CONSOLE_PORT`(8080) / `NACOS_GRPC_PORT`(9848) / `NACOS_GRPC_PORT_2`(9849) | 持久化到 MySQL，见下方"Nacos"说明 |
-| tdengine | tdengine/tdengine:3.3.6.0 | `TDENGINE_PORT`(6041，taosAdapter REST/WebSocket) / 6030（taosd 原生端口） | IoT 模块设备时序数据库，见下方"TDengine"说明 |
 
 ### 可选中间件（需要 `--profile <name>`，`toggle-yudao.bat` 菜单已封装）
 
 | 服务 | 镜像 | 默认端口 | profile |
 |---|---|---|---|
+| nginx | nginx:latest | `NGINX_PORT`→80 | nginx |
+| nacos | nacos/nacos-server:v3.0.3 | `NACOS_PORT`(8848) / `NACOS_CONSOLE_PORT`(8080) / `NACOS_GRPC_PORT`(9848) / `NACOS_GRPC_PORT_2`(9849) | nacos |
+| tdengine | tdengine/tdengine:3.3.6.0 | `TDENGINE_PORT`(6041，taosAdapter REST/WebSocket) / 6030（taosd 原生端口） | tdengine |
 | jenkins | jenkins/jenkins:lts | `JENKINS_PORT`(8089)→8080 | jenkins |
 | minio | minio/minio:latest | `MINIO_PORT`(9000) / `MINIO_CONSOLE_PORT`(9001) | minio |
 | rocketmq-namesrv / rocketmq-broker | apache/rocketmq:5.3.1 | `ROCKETMQ_NAMESRV_PORT`(9876) / `ROCKETMQ_BROKER_PORT`(10911) / `ROCKETMQ_BROKER_VIP_PORT`(10909) | rocketmq |
@@ -83,7 +83,7 @@ env/
 
 ## TDengine（IoT 模块）
 
-IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但有两处需要手动处理：
+IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜单 `10` 单独启动（`--profile tdengine`），另有两处需要手动处理：
 
 1. **应用侧**：`yudao-module-iot/yudao-module-iot-server/src/main/resources/application-local.yaml` 里的 `spring.datasource.dynamic.datasource.tdengine` 默认是注释的，需要取消注释才能连上，否则 `IoTServerApplication` 启动时会因为 `TDengineTableInitRunner` 初始化失败直接 `System.exit(1)`。
 2. **建库**：IoT 模块代码只会建"超级表"，不会自动建库，容器起来后需要手动执行一次（数据持久化在 `tdengine-data` 卷里，之后重启不用重复执行）：
@@ -98,15 +98,14 @@ IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但
 双击运行后是一个交互式菜单，输入编号回车执行：
 
 **核心服务**
-- `1` 启动核心（nginx/mysql/redis/nacos/tdengine）
+- `1` 启动核心（mysql/redis）
 - `2` 停止全部（含所有已启用的中间件 profile，保留数据卷）
 - `3` 重启核心
 - `4` 查看所有服务状态
 - `5` 查看核心服务日志（Ctrl+C 退出）
 - `6` 强制重建核心服务（改了镜像版本、环境变量后用这个）
-- `10` 启动核心服务 + PostgreSQL（核心服务之外再带上 PostgreSQL 一起启动，等价于 `1` 加 `17`）
 
-**中间件（单独启停）**：`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`19`/`29` Grafana LGTM；`7`/`8` 一键启停全部中间件。
+**中间件（单独启停）**：`10`/`20` TDengine，`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`18`/`28` Nacos，`19`/`29` Grafana LGTM，`40`/`50` Nginx；`7`/`8` 一键启停全部中间件（`8` 只停中间件，mysql/redis 保持运行）。
 
 **危险操作**
 - `9` 停止全部并**清空所有数据卷**（`down -v`），需要手动输入 `DELETE` 二次确认。用于彻底重置环境、让 `mysql/initdb` 脚本重新执行。
@@ -136,7 +135,7 @@ IoT 模块用 TDengine 存设备时序消息，跟核心服务一起启动，但
 
 ### toggle-yudao-k8s.bat 菜单说明
 
-菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`10` 启动核心+PostgreSQL、`11`-`29` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
 - `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
 - `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
 

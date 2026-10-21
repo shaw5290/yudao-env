@@ -8,7 +8,7 @@
 
 `yudao-env` 是芋道 `yudao-cloud` 的**本地开发依赖环境**，只有编排配置、初始化 SQL 和管理脚本，没有业务代码：
 
-- **Docker Compose**：主编排文件 `docker-compose-yudao.yaml`（compose 项目名 `name: yudao`），一键拉起 MySQL、Redis、Nacos、TDengine 等核心依赖，以及按 profile 启用的可选中间件。
+- **Docker Compose**：主编排文件 `docker-compose-yudao.yaml`（compose 项目名 `name: yudao`），一键拉起 MySQL、Redis 核心依赖，Nacos、TDengine、Nginx 等其余服务均为按 profile 单独启停的中间件。
 - **Kubernetes**：`k8s/` 下是一套等价清单，目标环境是 Docker Desktop 自带的单节点 Kubernetes。
 - **Windows 管理脚本**：`toggle-yudao.bat`（Compose 版）和 `toggle-yudao-k8s.bat`（K8s 版），交互式菜单，负责启停、日志、数据库备份还原。
 - **数据库初始化**：`mysql/initdb/` 下的 SQL 在 MySQL 空卷首次初始化时自动执行。
@@ -21,16 +21,16 @@
 
 | 服务 | 镜像 | 宿主机端口变量（`.env.temp` 默认值）→ 容器端口 | 卷 |
 |---|---|---|---|
-| nginx | `nginx:latest` | `NGINX_PORT`(80) → 80 | 无（预留，未配置站点） |
 | mysql | `mysql:8.0.21` | `MYSQL_PORT`(3306) → 3306 | `mysql-data`、`mysql-log`；绑定挂载 `./mysql/conf`、`./mysql/initdb`（只读） |
 | redis | `redis:7` | `REDIS_PORT`(6379) → 6379 | 无（未持久化） |
-| nacos | `nacos/nacos-server:v3.0.3` | `NACOS_PORT`(8848) → 8848；`NACOS_CONSOLE_PORT`(8080) → 8080；`NACOS_GRPC_PORT`(9848) → 9848；`NACOS_GRPC_PORT_2`(9849) → 9849 | `nacos-logs`、`nacos-plugins`、`nacos-data` |
-| tdengine | `tdengine/tdengine:3.3.6.0` | `TDENGINE_PORT`(6041，缺省也是 6041) → 6041（taosAdapter REST/WebSocket）；6030 → 6030（taosd 原生端口，写死） | `tdengine-data`、`tdengine-log` |
 
 可选中间件（需要 `--profile <name>`）：
 
 | 服务 | 镜像 | profile | 宿主机端口变量（默认值）→ 容器端口 | 卷 |
 |---|---|---|---|---|
+| nginx | `nginx:latest` | `nginx` | `NGINX_PORT`(80) → 80 | 无（预留，未配置站点） |
+| nacos | `nacos/nacos-server:v3.0.3` | `nacos` | `NACOS_PORT`(8848) → 8848；`NACOS_CONSOLE_PORT`(8080) → 8080；`NACOS_GRPC_PORT`(9848) → 9848；`NACOS_GRPC_PORT_2`(9849) → 9849 | `nacos-logs`、`nacos-plugins`、`nacos-data` |
+| tdengine | `tdengine/tdengine:3.3.6.0` | `tdengine` | `TDENGINE_PORT`(6041，缺省也是 6041) → 6041（taosAdapter REST/WebSocket）；6030 → 6030（taosd 原生端口，写死） | `tdengine-data`、`tdengine-log` |
 | jenkins | `jenkins/jenkins:lts` | `jenkins` | `JENKINS_PORT`(8089) → 8080（避开 Nacos 控制台的 8080） | `jenkins-home`；绑定挂载 `/var/run/docker.sock`、`/usr/bin/docker` |
 | minio | `minio/minio:latest` | `minio` | `MINIO_PORT`(9000) → 9000；`MINIO_CONSOLE_PORT`(9001) → 9001 | `minio-data` |
 | rocketmq-namesrv | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_NAMESRV_PORT`(9876) → 9876 | `rocketmq-namesrv-logs` |
@@ -111,15 +111,15 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 
 | 编号 | `toggle-yudao.bat`（Compose） | `toggle-yudao-k8s.bat`（K8s） |
 |---|---|---|
-| 1 | 启动核心（nginx/mysql/redis/nacos/tdengine），`up -d --build` | apply namespace + 同步 Secret `yudao-env` + apply `01`~`05` 清单 |
+| 1 | 启动核心（mysql/redis），`up -d --build mysql redis` | apply namespace + 同步 Secret `yudao-env` + apply `01`~`05` 清单 |
 | 2 | 停止全部（含所有 profile，`down`，保留卷），需 Y 确认 | 删除命名空间内所有 Deployment/Service，保留 PVC，需 Y 确认 |
-| 3 | 重启核心（`down` + `up -d --build`） | `kubectl rollout restart` 核心 Deployment |
+| 3 | 重启核心（`stop` + `up -d --build`，只作用于 mysql/redis） | `kubectl rollout restart` 核心 Deployment |
 | 4 | 查看所有服务状态 | `kubectl get pods,svc -o wide` |
 | 5 | 查看核心服务日志（`logs -f`） | 输入 Deployment 名后 `kubectl logs -f` |
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
-| 7 / 8 | 启动 / 停止全部中间件 | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
+| 7 / 8 | 启动 / 停止全部中间件（`8` 用 `stop`，不影响 mysql/redis） | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 11~19 / 21~29 | 启动 / 停止 MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28，仅 Compose 版）、Grafana LGTM（19/29） | 同左（无 18/28） |
+| 10~19 / 20~29、40 / 50 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19 / 21~27、29 同左 |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -192,7 +192,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射：`"${XXX_PORT}:<容器端口>"`，带引号；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
 - 敏感信息只通过 `${VAR}` 引用，不在 compose 中写字面量。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
-- 可选中间件用 `profiles: ["<name>"]`，profile 名与服务名对应（`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`）；新增 profile 时同步更新两个 bat 脚本中所有 `--profile` 列表和菜单。
+- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - 时区统一 `TZ: Asia/Shanghai`；JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
