@@ -15,8 +15,8 @@ BACKUP_DIR="backups"
 # 默认排除的系统库
 DB_EXCLUDE=(information_schema mysql performance_schema sys)
 
-ALL_PROFILES=(--profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile lgtm)
-SIDE_PROFILES=(--profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm)
+ALL_PROFILES=(--profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile postgres --profile lgtm --profile elk)
+SIDE_PROFILES=(--profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk)
 
 # ---- 前置检查 ----
 if ! command -v docker >/dev/null 2>&1; then
@@ -183,6 +183,15 @@ lgtm_up() {
 }
 lgtm_down() { echo; echo "[信息] 停止 Grafana LGTM..."; "${CMD[@]}" --profile lgtm stop lgtm; pause; }
 
+# ================= ELK =================
+elk_up() {
+    echo; echo "[信息] 启动 ELK（Elasticsearch + Logstash + Kibana），首次启动需要 1~2 分钟..."
+    "${CMD[@]}" --profile elk up -d elasticsearch logstash kibana
+    echo "[信息] Kibana 控制台：http://127.0.0.1:5601，应用上报地址（Logstash）：127.0.0.1:5044"
+    pause
+}
+elk_down() { echo; echo "[信息] 停止 ELK..."; "${CMD[@]}" --profile elk stop elasticsearch logstash kibana; pause; }
+
 # ================= 数据库备份 =================
 db_backup() {
     echo
@@ -319,6 +328,7 @@ menu() {
     16. 启动 Jenkins        26. 停止 Jenkins
     17. 启动 PostgreSQL     27. 停止 PostgreSQL
     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
+    41. 启动 ELK            51. 停止 ELK
 
     7. 启动全部侧车        8. 停止全部侧车
     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -364,6 +374,8 @@ while true; do
         27) postgres_down ;;
         19) lgtm_up ;;
         29) lgtm_down ;;
+        41) elk_up ;;
+        51) elk_down ;;
         31) db_backup ;;
         32) db_restore ;;
         33) db_list_backups ;;

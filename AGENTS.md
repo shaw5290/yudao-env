@@ -39,15 +39,18 @@
 | seata-server | `seataio/seata-server:2.0.0` | `seata` | `SEATA_PORT`(8091) → 8091；`SEATA_DASHBOARD_PORT`(7091) → 7091 | 绑定挂载 `./seata/resources` |
 | sentinel-dashboard | `bladex/sentinel-dashboard:1.8.8` | `sentinel` | `SENTINEL_PORT`(8858) → 8858 | `sentinel-logs` |
 | lgtm | `grafana/otel-lgtm:0.37.0` | `lgtm` | `LGTM_GRAFANA_PORT`(3000) → 3000（Grafana）；`LGTM_OTLP_GRPC_PORT`(4317) → 4317；`LGTM_OTLP_HTTP_PORT`(4318) → 4318 | `lgtm-data` |
+| elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch:8.19.23` | `elk` | `ELASTICSEARCH_PORT`(9200) → 9200 | `elasticsearch-data` |
+| logstash | `docker.elastic.co/logstash/logstash:8.19.23` | `elk` | `LOGSTASH_TCP_PORT`(5044) → 5044（tcp + json_lines，应用上报日志） | 绑定挂载 `./elk/logstash/pipeline`（只读） |
+| kibana | `docker.elastic.co/kibana/kibana:8.19.23` | `elk` | `KIBANA_PORT`(5601) → 5601 | 无 |
 
-依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 未配置或留空时默认 `yudao`。
+依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`logstash`、`kibana` 依赖 `elasticsearch`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 未配置或留空时默认 `yudao`。
 
 ### `.env.temp` 变量（只列变量名）
 
 | 分组 | 变量 |
 |---|---|
 | 项目 | `PROJECT_NAME` |
-| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT` |
+| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT` |
 | MySQL | `MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | Nacos 连接 MySQL | `NACOS_DB_NAME`、`NACOS_DB_USER`、`NACOS_DB_PASSWORD` |
@@ -119,7 +122,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
 | 7 / 8 | 启动 / 停止全部中间件（`8` 用 `stop`，不影响 mysql/redis） | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 10~19 / 20~29、40 / 50 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19 / 21~27、29 同左 |
+| 10~19 / 20~29、40 / 50 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19、41 / 21~27、29、51 同左 |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -192,7 +195,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射并带缺省值：`"${XXX_PORT:-<默认端口>}:<容器端口>"`，带引号，缺省值与 `.env.temp` 一致（`.env` 未配置时仍使用默认端口，而不是随机端口）；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
 - 所有变量都写成 `${VAR:-<缺省值>}`，保证没有 `.env` 也能直接启动；口令类缺省值只用于本地开发，须与 `toggle-yudao.bat` 的 `DB_PASSWORD`、`mysql/initdb/01-create-databases.sql` 中的用户口令保持一致。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
-- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
+- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - 时区统一 `TZ: Asia/Shanghai`；JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
@@ -246,6 +249,7 @@ yudao-env/
 ├── mysql/
 │   └── initdb/                 # MySQL 首次初始化脚本（01 建库建用户 ~ 06 Quartz）
 ├── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
+├── elk/logstash/pipeline/      # Logstash pipeline：tcp json_lines（5044）→ Elasticsearch 索引 yudao-logs-YYYY.MM.dd
 └── k8s/
     ├── 00-namespace.yaml       # Namespace yudao
     ├── 01-mysql.yaml           # PVC + Deployment + Service（hostPath 挂载 mysql/conf、mysql/initdb）
@@ -260,7 +264,8 @@ yudao-env/
     ├── 14-seata.yaml
     ├── 15-sentinel.yaml
     ├── 16-postgres.yaml
-    └── 17-lgtm.yaml            # Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）
+    ├── 17-lgtm.yaml            # Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）
+    └── 18-elk.yaml             # ELK：Elasticsearch + Logstash（pipeline 用 ConfigMap 内联）+ Kibana
 ```
 
 compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行，需要时自行创建）：

@@ -13,8 +13,8 @@ set CMD=docker compose -f %COMPOSE_FILE%
 REM 核心服务（不带 profile，up -d 默认只启动这些）
 set CORE_SERVICES=mysql redis
 REM 所有中间件 profile / 服务（新增中间件时同步这两行）
-set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm
-set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm
+set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk
+set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana
 
 REM ---- 数据库备份配置 ----
 set DB_CONTAINER=yudao-mysql
@@ -61,6 +61,7 @@ echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
 echo     18. 启动 Nacos          28. 停止 Nacos
 echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     40. 启动 Nginx          50. 停止 Nginx
+echo     41. 启动 ELK            51. 停止 ELK
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -106,6 +107,8 @@ if "%choice%"=="19" goto :lgtm_up
 if "%choice%"=="29" goto :lgtm_down
 if "%choice%"=="40" goto :nginx_up
 if "%choice%"=="50" goto :nginx_down
+if "%choice%"=="41" goto :elk_up
+if "%choice%"=="51" goto :elk_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -344,6 +347,22 @@ goto :menu
 echo.
 echo [信息] 停止 Grafana LGTM...
 %CMD% --profile lgtm stop lgtm
+pause
+goto :menu
+
+REM ================= ELK =================
+:elk_up
+echo.
+echo [信息] 启动 ELK（Elasticsearch + Logstash + Kibana），首次启动需要 1~2 分钟...
+%CMD% --profile elk up -d elasticsearch logstash kibana
+echo [信息] Kibana 控制台：http://127.0.0.1:5601，应用上报地址（Logstash）：127.0.0.1:5044
+pause
+goto :menu
+
+:elk_down
+echo.
+echo [信息] 停止 ELK...
+%CMD% --profile elk stop elasticsearch logstash kibana
 pause
 goto :menu
 
