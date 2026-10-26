@@ -13,8 +13,8 @@ set CMD=docker compose -f %COMPOSE_FILE%
 REM 核心服务（不带 profile，up -d 默认只启动这些）
 set CORE_SERVICES=mysql redis
 REM 所有中间件 profile / 服务（新增中间件时同步这两行）
-set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk
-set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana
+set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq
+set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana rabbitmq
 
 REM ---- 数据库备份配置 ----
 set DB_CONTAINER=yudao-mysql
@@ -62,6 +62,7 @@ echo     18. 启动 Nacos          28. 停止 Nacos
 echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     40. 启动 Nginx          50. 停止 Nginx
 echo     41. 启动 ELK            51. 停止 ELK
+echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -109,6 +110,8 @@ if "%choice%"=="40" goto :nginx_up
 if "%choice%"=="50" goto :nginx_down
 if "%choice%"=="41" goto :elk_up
 if "%choice%"=="51" goto :elk_down
+if "%choice%"=="42" goto :rabbitmq_up
+if "%choice%"=="52" goto :rabbitmq_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -363,6 +366,22 @@ goto :menu
 echo.
 echo [信息] 停止 ELK...
 %CMD% --profile elk stop elasticsearch logstash kibana
+pause
+goto :menu
+
+REM ================= RabbitMQ =================
+:rabbitmq_up
+echo.
+echo [信息] 启动 RabbitMQ...
+%CMD% --profile rabbitmq up -d rabbitmq
+echo [信息] 管理控制台：http://127.0.0.1:15672（账号为 .env 的 RABBITMQ_USERNAME / RABBITMQ_PASSWORD），AMQP 地址：127.0.0.1:5672
+pause
+goto :menu
+
+:rabbitmq_down
+echo.
+echo [信息] 停止 RabbitMQ...
+%CMD% --profile rabbitmq stop rabbitmq
 pause
 goto :menu
 
