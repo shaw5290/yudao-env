@@ -143,6 +143,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - postgres-log:/var/log/postgresql
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro   # 首次初始化（空卷）时执行，建库 ruoyi-vue-pro 并导入表结构
     logging:
       options:
         max-size: "10m"
@@ -194,6 +195,27 @@ services:
       - rocketmq-broker-logs:/home/rocketmq/logs
       - rocketmq-broker-store:/home/rocketmq/store
       - ./rocketmq/broker/conf/broker.conf:/home/rocketmq/conf/broker.conf
+
+  rabbitmq:
+    container_name: ${PROJECT_NAME:-yudao}-rabbitmq
+    image: rabbitmq:4.1-management
+    restart: always
+    profiles: ["rabbitmq"]
+    hostname: rabbitmq # 数据目录按节点名（rabbit@<hostname>）存放，固定 hostname 避免容器重建后数据丢失
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672" # AMQP
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672" # 管理控制台
+    environment:
+      TZ: Asia/Shanghai
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
 
   xxl-job-admin:
     container_name: ${PROJECT_NAME:-yudao}-xxl-job-admin
@@ -325,6 +347,7 @@ volumes:
   rocketmq-namesrv-logs:
   rocketmq-broker-logs:
   rocketmq-broker-store:
+  rabbitmq-data:
   xxl-job-logs:
   sentinel-logs:
   tdengine-data:

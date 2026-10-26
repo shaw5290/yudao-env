@@ -41,10 +41,17 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: postgres-data
+        - name: initdb
+          hostPath:
+            path: /run/desktop/mnt/host/d/sourceCode/yudao/env/postgres/initdb
+            type: Directory
 ---
 apiVersion: v1
 kind: Service

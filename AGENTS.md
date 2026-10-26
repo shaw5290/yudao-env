@@ -35,9 +35,11 @@
 | minio | `minio/minio:latest` | `minio` | `MINIO_PORT`(9000) → 9000；`MINIO_CONSOLE_PORT`(9001) → 9001 | `minio-data` |
 | rocketmq-namesrv | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_NAMESRV_PORT`(9876) → 9876 | `rocketmq-namesrv-logs` |
 | rocketmq-broker | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_BROKER_PORT`(10911) → 10911；`ROCKETMQ_BROKER_VIP_PORT`(10909) → 10909 | `rocketmq-broker-logs`、`rocketmq-broker-store`；绑定挂载 `./rocketmq/broker/conf/broker.conf` |
+| rabbitmq | `rabbitmq:4.1-management` | `rabbitmq` | `RABBITMQ_PORT`(5672) → 5672（AMQP）；`RABBITMQ_MANAGEMENT_PORT`(15672) → 15672（管理控制台） | `rabbitmq-data`（固定 `hostname: rabbitmq`，数据目录按节点名存放） |
 | xxl-job-admin | `xuxueli/xxl-job-admin:2.4.1` | `xxl-job` | `XXL_JOB_PORT`(8088) → 8080 | `xxl-job-logs` |
 | seata-server | `seataio/seata-server:2.0.0` | `seata` | `SEATA_PORT`(8091) → 8091；`SEATA_DASHBOARD_PORT`(7091) → 7091 | 绑定挂载 `./seata/resources` |
 | sentinel-dashboard | `bladex/sentinel-dashboard:1.8.8` | `sentinel` | `SENTINEL_PORT`(8858) → 8858 | `sentinel-logs` |
+| postgres | `postgres:16-alpine` | `postgres` | `POSTGRES_PORT`(5432) → 5432 | `postgres-data`、`postgres-log`；绑定挂载 `./postgres/initdb`（只读） |
 | lgtm | `grafana/otel-lgtm:0.37.0` | `lgtm` | `LGTM_GRAFANA_PORT`(3000) → 3000（Grafana）；`LGTM_OTLP_GRPC_PORT`(4317) → 4317；`LGTM_OTLP_HTTP_PORT`(4318) → 4318 | `lgtm-data` |
 | elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch:8.19.23` | `elk` | `ELASTICSEARCH_PORT`(9200) → 9200 | `elasticsearch-data` |
 | logstash | `docker.elastic.co/logstash/logstash:8.19.23` | `elk` | `LOGSTASH_TCP_PORT`(5044) → 5044（tcp + json_lines，应用上报日志） | 绑定挂载 `./elk/logstash/pipeline`（只读） |
@@ -50,13 +52,14 @@
 | 分组 | 变量 |
 |---|---|
 | 项目 | `PROJECT_NAME` |
-| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT` |
+| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`RABBITMQ_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT` |
 | MySQL | `MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | Nacos 连接 MySQL | `NACOS_DB_NAME`、`NACOS_DB_USER`、`NACOS_DB_PASSWORD` |
 | Nacos 鉴权 | `NACOS_AUTH_ENABLE`、`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE` |
 | MinIO | `MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD` |
 | RocketMQ | `ROCKETMQ_BROKER_IP`（宿主机 IP，不能写 `127.0.0.1`） |
+| RabbitMQ | `RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`（与 yudao-cloud 同名；只在数据卷首次初始化时生效） |
 | XXL-Job | `XXL_JOB_DB_NAME` |
 | Seata | `SEATA_IP`（宿主机 IP） |
 
@@ -94,7 +97,7 @@ docker compose -f docker-compose-yudao.yaml --profile minio stop minio
 docker compose -f docker-compose-yudao.yaml --profile rocketmq up -d          # namesrv + broker
 
 # 停止全部（含所有 profile，保留数据卷）
-docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down
+docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq down
 ```
 
 K8s 版（与 `toggle-yudao-k8s.bat` 内部命令一致）：
@@ -122,7 +125,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
 | 7 / 8 | 启动 / 停止全部中间件（`8` 用 `stop`，不影响 mysql/redis） | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 10~19 / 20~29、40 / 50 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19、41 / 21~27、29、51 同左 |
+| 10~19 / 20~29、40~42 / 50~52 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19、41、42 / 21~27、29、51、52 同左 |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -149,7 +152,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 需要重新执行 initdb 时（会删除所有数据，先备份）：
 
 ```bash
-docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel down -v
+docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq down -v
 docker compose -f docker-compose-yudao.yaml up -d
 ```
 
@@ -168,6 +171,20 @@ docker exec -i yudao-mysql mysql -uroot -p<密码> < backups\mysql_<时间戳>.s
 - 脚本开头写死了 `DB_CONTAINER=yudao-mysql`、`DB_USER`、`DB_PASSWORD`、`BACKUP_DIR=backups`；`DB_CONTAINER` 依赖 `PROJECT_NAME=yudao`，`DB_PASSWORD` 必须与 `.env` 的 `MYSQL_ROOT_PASSWORD` 一致，否则备份失败。
 - K8s 版用 `kubectl exec -n yudao deploy/mysql` 代替 `docker exec`，两个脚本生成的备份文件可以互相还原。
 - `backups/` 目录已提交了一份完整备份 `mysql_20260921_529.sql`；新备份是否提交由用户决定。
+
+### PostgreSQL 初始化
+
+yudao-cloud 后端设置 `DB_PRIMARY=postgresql` 时使用，默认连接 `127.0.0.1:5432/ruoyi-vue-pro`、`postgres` / `123456`（`PG_HOST`、`PG_PORT`、`PG_DATABASE`、`PG_USERNAME`、`PG_PASSWORD` 可覆盖）。`postgres/initdb/` 挂载到容器的 `/docker-entrypoint-initdb.d`，**只在 `postgres-data` 卷为空时执行一次**，由镜像入口用 `psql` 执行：
+
+| 脚本 | 内容 |
+|---|---|
+| `01-create-databases.sql` | 建库 `ruoyi-vue-pro`（PostgreSQL 没有 `CREATE DATABASE IF NOT EXISTS`，依赖"只执行一次"） |
+| `02-yudao-schema.sql` | 首行 `\connect "ruoyi-vue-pro"`，其后为 `yudao-cloud/sql/postgresql/ruoyi-vue-pro.sql` 原文 |
+| `03-yudao-quartz.sql` | 首行 `\connect "ruoyi-vue-pro"`，其后为 `yudao-cloud/sql/postgresql/quartz.sql` 原文 |
+
+- 02、03 从上游整体同步：保留首行 `\connect`，其余内容整体替换，不要手工零散修改。
+- `POSTGRES_DB`（默认 `postgres`）只是镜像创建的默认库，业务库名固定为 `ruoyi-vue-pro`。
+- 重新初始化：`docker compose -f docker-compose-yudao.yaml --profile postgres rm -sf postgres` 后 `docker volume rm yudao_postgres-data`，再启动（会丢失数据，先确认）。
 
 ### TDengine（IoT 模块）
 
@@ -195,7 +212,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射并带缺省值：`"${XXX_PORT:-<默认端口>}:<容器端口>"`，带引号，缺省值与 `.env.temp` 一致（`.env` 未配置时仍使用默认端口，而不是随机端口）；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
 - 所有变量都写成 `${VAR:-<缺省值>}`，保证没有 `.env` 也能直接启动；口令类缺省值只用于本地开发，须与 `toggle-yudao.bat` 的 `DB_PASSWORD`、`mysql/initdb/01-create-databases.sql` 中的用户口令保持一致。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
-- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
+- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`、`rabbitmq`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - 时区统一 `TZ: Asia/Shanghai`；JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
@@ -248,6 +265,8 @@ yudao-env/
 ├── .gitignore                  # 忽略运行时数据、日志、.env 等
 ├── mysql/
 │   └── initdb/                 # MySQL 首次初始化脚本（01 建库建用户 ~ 06 Quartz）
+├── postgres/
+│   └── initdb/                 # PostgreSQL 首次初始化脚本（01 建库 ~ 03 Quartz）
 ├── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
 ├── elk/logstash/pipeline/      # Logstash pipeline：tcp json_lines（5044）→ Elasticsearch 索引 yudao-logs-YYYY.MM.dd
 └── k8s/
@@ -265,7 +284,8 @@ yudao-env/
     ├── 15-sentinel.yaml
     ├── 16-postgres.yaml
     ├── 17-lgtm.yaml            # Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）
-    └── 18-elk.yaml             # ELK：Elasticsearch + Logstash（pipeline 用 ConfigMap 内联）+ Kibana
+    ├── 18-elk.yaml             # ELK：Elasticsearch + Logstash（pipeline 用 ConfigMap 内联）+ Kibana
+    └── 19-rabbitmq.yaml        # RabbitMQ（含管理控制台）
 ```
 
 compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行，需要时自行创建）：
@@ -382,7 +402,7 @@ kubectl apply --dry-run=client -f k8s/
 
 ### K8s 版 hostPath 挂载失败
 
-原因：`k8s/01-mysql.yaml`、`12-rocketmq.yaml`、`14-seata.yaml` 中的 `hostPath` 写死为 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`，与当前仓库位置不同（如 `D:\workspace\yudao\yudao-env` 对应 `/run/desktop/mnt/host/d/workspace/yudao/yudao-env/...`）。`mysql/initdb` 使用 `type: Directory`，路径不存在时 Pod 无法启动。
+原因：`k8s/01-mysql.yaml`、`12-rocketmq.yaml`、`14-seata.yaml`、`16-postgres.yaml` 中的 `hostPath` 写死为 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`，与当前仓库位置不同（如 `D:\workspace\yudao\yudao-env` 对应 `/run/desktop/mnt/host/d/workspace/yudao/yudao-env/...`）。`mysql/initdb`、`postgres/initdb` 使用 `type: Directory`，路径不存在时 Pod 无法启动。
 解决：把所有 `hostPath.path` 改成实际路径的映射（盘符小写）。
 
 ### 改了 `.env` 端口但 K8s 版没有变化
