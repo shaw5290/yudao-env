@@ -125,7 +125,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
 | 7 / 8 | 启动 / 停止全部中间件（`8` 用 `stop`，不影响 mysql/redis） | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 10~19 / 20~29、40~42 / 50~52 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52），仅 18/28、10/20、40/50 为 Compose 版独有 | 11~17、19、41、42 / 21~27、29、51、52 同左 |
+| 10~19 / 20~29、40~42 / 50~52 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52），仅 18/28、10/20、40/50 为 Compose 版独有；停止时经子程序 `:middleware_down` 询问是否删除数据卷（默认 N 只 `stop`；`y` 则 `rm -s -f` 后 `docker volume rm yudao_<卷名>`），无命名卷的 Seata、Nginx 直接 `stop` | 11~17、19、41、42 / 21~27、29、51、52 同左 |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |

@@ -10,6 +10,8 @@ set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemR
 
 set COMPOSE_FILE=docker-compose-yudao.yaml
 set CMD=docker compose -f %COMPOSE_FILE%
+REM 数据卷名前缀 = compose 项目名（%COMPOSE_FILE% 中的 name: yudao），实际卷名为 yudao_卷名
+set VOLUME_PREFIX=yudao
 REM 核心服务（不带 profile，up -d 默认只启动这些）
 set CORE_SERVICES=mysql redis
 REM 所有中间件 profile / 服务（新增中间件时同步这两行）
@@ -63,6 +65,7 @@ echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     40. 启动 Nginx          50. 停止 Nginx
 echo     41. 启动 ELK            51. 停止 ELK
 echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
+echo     （停止中间件时会询问是否同时删除数据卷，默认 N 保留数据）
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)
 echo     9. 停止全部并清空数据卷 (down -v，危险！会删除所有数据)
@@ -228,7 +231,7 @@ goto :menu
 :tdengine_down
 echo.
 echo [信息] 停止 TDengine...
-%CMD% --profile tdengine stop tdengine
+call :middleware_down tdengine "tdengine" "tdengine-data tdengine-log"
 pause
 goto :menu
 
@@ -243,7 +246,7 @@ goto :menu
 :minio_down
 echo.
 echo [信息] 停止 MinIO...
-%CMD% --profile minio stop minio
+call :middleware_down minio "minio" "minio-data"
 pause
 goto :menu
 
@@ -258,7 +261,7 @@ goto :menu
 :rocketmq_down
 echo.
 echo [信息] 停止 RocketMQ...
-%CMD% --profile rocketmq stop
+call :middleware_down rocketmq "rocketmq-namesrv rocketmq-broker" "rocketmq-namesrv-logs rocketmq-broker-logs rocketmq-broker-store"
 pause
 goto :menu
 
@@ -273,7 +276,7 @@ goto :menu
 :xxljob_down
 echo.
 echo [信息] 停止 XXL-Job...
-%CMD% --profile xxl-job stop xxl-job-admin
+call :middleware_down xxl-job "xxl-job-admin" "xxl-job-logs"
 pause
 goto :menu
 
@@ -288,7 +291,7 @@ goto :menu
 :seata_down
 echo.
 echo [信息] 停止 Seata...
-%CMD% --profile seata stop seata-server
+call :middleware_down seata "seata-server" ""
 pause
 goto :menu
 
@@ -303,7 +306,7 @@ goto :menu
 :sentinel_down
 echo.
 echo [信息] 停止 Sentinel Dashboard...
-%CMD% --profile sentinel stop sentinel-dashboard
+call :middleware_down sentinel "sentinel-dashboard" "sentinel-logs"
 pause
 goto :menu
 
@@ -318,7 +321,7 @@ goto :menu
 :postgres_down
 echo.
 echo [信息] 停止 PostgreSQL...
-%CMD% --profile postgres stop postgres
+call :middleware_down postgres "postgres" "postgres-data postgres-log"
 pause
 goto :menu
 
@@ -333,7 +336,7 @@ goto :menu
 :nacos_down
 echo.
 echo [信息] 停止 Nacos...
-%CMD% --profile nacos stop nacos
+call :middleware_down nacos "nacos" "nacos-data nacos-logs nacos-plugins"
 pause
 goto :menu
 
@@ -349,7 +352,7 @@ goto :menu
 :lgtm_down
 echo.
 echo [信息] 停止 Grafana LGTM...
-%CMD% --profile lgtm stop lgtm
+call :middleware_down lgtm "lgtm" "lgtm-data"
 pause
 goto :menu
 
@@ -365,7 +368,7 @@ goto :menu
 :elk_down
 echo.
 echo [信息] 停止 ELK...
-%CMD% --profile elk stop elasticsearch logstash kibana
+call :middleware_down elk "elasticsearch logstash kibana" "elasticsearch-data"
 pause
 goto :menu
 
@@ -381,7 +384,7 @@ goto :menu
 :rabbitmq_down
 echo.
 echo [信息] 停止 RabbitMQ...
-%CMD% --profile rabbitmq stop rabbitmq
+call :middleware_down rabbitmq "rabbitmq" "rabbitmq-data"
 pause
 goto :menu
 
@@ -396,7 +399,7 @@ goto :menu
 :jenkins_down
 echo.
 echo [信息] 停止 Jenkins...
-%CMD% --profile jenkins stop jenkins
+call :middleware_down jenkins "jenkins" "jenkins-home"
 pause
 goto :menu
 
@@ -411,10 +414,35 @@ goto :menu
 :nginx_down
 echo.
 echo [信息] 停止 Nginx...
-%CMD% --profile nginx stop nginx
+call :middleware_down nginx "nginx" ""
 pause
 goto :menu
 
+REM ================= 中间件停止（可选删除数据卷） =================
+REM 用法：call :middleware_down profile "服务列表" "数据卷列表"
+REM 数据卷写 compose 中的卷名（不带前缀）；没有命名卷的服务传 ""，只停止不询问
+:middleware_down
+set "MD_PROFILE=%~1"
+set "MD_SERVICES=%~2"
+set "MD_VOLUMES=%~3"
+if "%MD_VOLUMES%"=="" (
+    %CMD% --profile %MD_PROFILE% stop %MD_SERVICES%
+    exit /b
+)
+echo [提示] 相关数据卷：%MD_VOLUMES%
+set "rmvol=N"
+set /p rmvol=是否同时删除容器和数据卷？删除后数据不可恢复 (y/N，默认 N):
+if /i not "!rmvol!"=="Y" (
+    %CMD% --profile %MD_PROFILE% stop %MD_SERVICES%
+    echo [完成] 已停止，数据卷已保留。
+    exit /b
+)
+%CMD% --profile %MD_PROFILE% rm -s -f %MD_SERVICES%
+for %%v in (%MD_VOLUMES%) do (
+    docker volume inspect %VOLUME_PREFIX%_%%v >nul 2>nul && docker volume rm %VOLUME_PREFIX%_%%v
+)
+echo [完成] 已停止并删除容器和数据卷。
+exit /b
 
 REM ================= 数据库备份 =================
 :db_backup
