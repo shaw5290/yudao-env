@@ -237,7 +237,7 @@ services:
 
   seata-server:
     container_name: ${PROJECT_NAME:-yudao}-seata-server
-    image: seataio/seata-server:2.0.0
+    image: apache/seata-server:2.5.0   # 与 yudao-cloud 的 Seata 客户端版本（spring-cloud-alibaba-dependencies 管理）保持一致
     restart: always
     profiles: ["seata"]
     depends_on:
@@ -247,19 +247,13 @@ services:
       - "${SEATA_PORT:-8091}:8091"
       - "${SEATA_DASHBOARD_PORT:-7091}:7091"
     environment:
-      SEATA_IP: ${SEATA_IP:-127.0.0.1}
+      SEATA_IP: ${SEATA_IP:-127.0.0.1}   # 注册到 Nacos 的地址，宿主机上的服务通过它连接 TC
       SEATA_PORT: 8091
-      STORE_MODE: db
-      SEATA_REGISTRY_TYPE: nacos
-      SEATA_REGISTRY_NACOS_SERVER_ADDR: nacos:8848
-      SEATA_REGISTRY_NACOS_APPLICATION: seata-server
-      SEATA_REGISTRY_NACOS_GROUP: SEATA_GROUP
-      SEATA_CONFIG_TYPE: nacos
-      SEATA_CONFIG_NACOS_SERVER_ADDR: nacos:8848
-      SEATA_CONFIG_NACOS_GROUP: SEATA_GROUP
-      SEATA_CONFIG_NACOS_DATA_ID: seataServer.properties
+      SEATA_DB_PASSWORD: ${SEATA_DB_PASSWORD:-123456}   # 与 mysql/initdb/01-create-databases.sql 的 seata 用户一致
+      SEATA_NACOS_USERNAME: ${NACOS_USERNAME:-}   # Nacos 开启鉴权时填写
+      SEATA_NACOS_PASSWORD: ${NACOS_PASSWORD:-}
     volumes:
-      - ./seata/resources:/seata-server/resources
+      - ./seata/resources/application.yml:/seata-server/resources/application.yml:ro   # 只挂载配置文件，注册中心 / 存储配置见该文件
 
   sentinel-dashboard:
     container_name: ${PROJECT_NAME:-yudao}-sentinel-dashboard

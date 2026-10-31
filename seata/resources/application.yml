@@ -1,0 +1,58 @@
+# Seata Server 2.x 配置，compose / k8s 只挂载本文件到 /seata-server/resources/application.yml（不覆盖镜像内的 logback 等其它资源）
+# 注册中心：Nacos（public 命名空间、SEATA_GROUP 分组），客户端 seata.registry.nacos 需与此一致
+# 配置中心：file（即本文件），不依赖 Nacos 中的 seataServer.properties
+# 存储：db，使用 mysql/initdb/04-seata-schema.sql 创建的 seata 库
+# 口令均为本地开发缺省值，可通过同名环境变量覆盖，生产环境必须修改
+server:
+  port: 7091
+
+spring:
+  application:
+    name: seata-server
+
+logging:
+  config: classpath:logback-spring.xml
+  file:
+    path: ${log.home:${user.home}/logs/seata}
+
+console:
+  user:
+    username: ${SEATA_CONSOLE_USERNAME:seata}
+    password: ${SEATA_CONSOLE_PASSWORD:seata}
+
+seata:
+  config:
+    type: file
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: ${SEATA_NACOS_SERVER_ADDR:nacos:8848}
+      group: SEATA_GROUP
+      namespace: ''
+      cluster: default
+      username: ${SEATA_NACOS_USERNAME:}
+      password: ${SEATA_NACOS_PASSWORD:}
+  store:
+    mode: db
+    db:
+      datasource: druid
+      db-type: mysql
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://${SEATA_DB_HOST:mysql}:3306/seata?rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      user: ${SEATA_DB_USERNAME:seata}
+      password: ${SEATA_DB_PASSWORD:123456}
+      min-conn: 10
+      max-conn: 100
+      global-table: global_table
+      branch-table: branch_table
+      lock-table: lock_table
+      distributed-lock-table: distributed_lock
+      query-limit: 1000
+      max-wait: 5000
+  security:
+    secretKey: ${SEATA_SECRET_KEY:SeataSecretKey0c382ef121d778043159209298fd40bf3850a017}
+    tokenValidityInMilliseconds: 1800000
+    csrf-ignore-urls: /metadata/v1/**
+    ignore:
+      urls: /,/**/*.css,/**/*.js,/**/*.html,/**/*.map,/**/*.svg,/**/*.png,/**/*.jpeg,/**/*.ico,/api/v1/auth/login,/version.json,/health,/error

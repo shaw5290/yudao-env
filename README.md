@@ -16,7 +16,7 @@ env/
 ├── postgres/
 │   └── initdb/                 # PostgreSQL 首次启动自动执行的建库建表脚本
 ├── rocketmq/broker/conf/       # RocketMQ broker.conf
-├── seata/resources/            # Seata 配置文件
+├── seata/resources/            # Seata Server 配置（application.yml）
 ├── elk/logstash/pipeline/      # Logstash pipeline（tcp json_lines → Elasticsearch）
 └── backups/                    # 数据库备份输出目录（脚本自动生成）
 ```
@@ -53,7 +53,7 @@ env/
 | rocketmq-namesrv / rocketmq-broker | apache/rocketmq:5.3.1 | `ROCKETMQ_NAMESRV_PORT`(9876) / `ROCKETMQ_BROKER_PORT`(10911) / `ROCKETMQ_BROKER_VIP_PORT`(10909) | rocketmq |
 | rabbitmq | rabbitmq:4.1-management | `RABBITMQ_PORT`(5672，AMQP) / `RABBITMQ_MANAGEMENT_PORT`(15672，管理控制台) | rabbitmq |
 | xxl-job-admin | xuxueli/xxl-job-admin:2.4.1 | `XXL_JOB_PORT`→8080 | xxl-job |
-| seata-server | seataio/seata-server:2.0.0 | `SEATA_PORT`(8091) / `SEATA_DASHBOARD_PORT`(7091) | seata |
+| seata-server | apache/seata-server:2.5.0 | `SEATA_PORT`(8091) / `SEATA_DASHBOARD_PORT`(7091) | seata |
 | sentinel-dashboard | bladex/sentinel-dashboard:1.8.8 | `SENTINEL_PORT`→8858 | sentinel |
 | postgres | postgres:16-alpine | `POSTGRES_PORT`→5432 | postgres |
 | lgtm | grafana/otel-lgtm:0.37.0 | `LGTM_GRAFANA_PORT`(3000) / `LGTM_OTLP_GRPC_PORT`(4317) / `LGTM_OTLP_HTTP_PORT`(4318) | lgtm |

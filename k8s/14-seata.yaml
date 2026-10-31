@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: seata-server
-          image: seataio/seata-server:2.0.0
+          image: apache/seata-server:2.5.0   # 与 yudao-cloud 的 Seata 客户端版本保持一致
           ports:
             - containerPort: 8091
               hostPort: 8091   # 对应 .env 的 SEATA_PORT
@@ -29,32 +29,17 @@ spec:
           env:
             - name: SEATA_PORT
               value: "8091"
-            - name: STORE_MODE
-              value: db
-            - name: SEATA_REGISTRY_TYPE
-              value: nacos
-            - name: SEATA_REGISTRY_NACOS_SERVER_ADDR
-              value: nacos:8848   # k8s Service 名
-            - name: SEATA_REGISTRY_NACOS_APPLICATION
-              value: seata-server
-            - name: SEATA_REGISTRY_NACOS_GROUP
-              value: SEATA_GROUP
-            - name: SEATA_CONFIG_TYPE
-              value: nacos
-            - name: SEATA_CONFIG_NACOS_SERVER_ADDR
-              value: nacos:8848
-            - name: SEATA_CONFIG_NACOS_GROUP
-              value: SEATA_GROUP
-            - name: SEATA_CONFIG_NACOS_DATA_ID
-              value: seataServer.properties
+            # 注册中心 / 存储配置见 seata/resources/application.yml，Nacos、MySQL 地址为 k8s Service 名（nacos、mysql）
           volumeMounts:
-            - name: resources
-              mountPath: /seata-server/resources
+            - name: config
+              mountPath: /seata-server/resources/application.yml
+              subPath: application.yml
+              readOnly: true
       volumes:
-        - name: resources
+        - name: config
           hostPath:
             path: /run/desktop/mnt/host/d/sourceCode/yudao/env/seata/resources
-            type: DirectoryOrCreate
+            type: Directory
 ---
 apiVersion: v1
 kind: Service

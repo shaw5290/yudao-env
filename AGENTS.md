@@ -37,7 +37,7 @@
 | rocketmq-broker | `apache/rocketmq:5.3.1` | `rocketmq` | `ROCKETMQ_BROKER_PORT`(10911) → 10911；`ROCKETMQ_BROKER_VIP_PORT`(10909) → 10909 | `rocketmq-broker-logs`、`rocketmq-broker-store`；绑定挂载 `./rocketmq/broker/conf/broker.conf` |
 | rabbitmq | `rabbitmq:4.1-management` | `rabbitmq` | `RABBITMQ_PORT`(5672) → 5672（AMQP）；`RABBITMQ_MANAGEMENT_PORT`(15672) → 15672（管理控制台） | `rabbitmq-data`（固定 `hostname: rabbitmq`，数据目录按节点名存放） |
 | xxl-job-admin | `xuxueli/xxl-job-admin:2.4.1` | `xxl-job` | `XXL_JOB_PORT`(8088) → 8080 | `xxl-job-logs` |
-| seata-server | `seataio/seata-server:2.0.0` | `seata` | `SEATA_PORT`(8091) → 8091；`SEATA_DASHBOARD_PORT`(7091) → 7091 | 绑定挂载 `./seata/resources` |
+| seata-server | `apache/seata-server:2.5.0` | `seata` | `SEATA_PORT`(8091) → 8091；`SEATA_DASHBOARD_PORT`(7091) → 7091 | 绑定挂载 `./seata/resources/application.yml`（只读） |
 | sentinel-dashboard | `bladex/sentinel-dashboard:1.8.8` | `sentinel` | `SENTINEL_PORT`(8858) → 8858 | `sentinel-logs` |
 | postgres | `postgres:16-alpine` | `postgres` | `POSTGRES_PORT`(5432) → 5432 | `postgres-data`、`postgres-log`；绑定挂载 `./postgres/initdb`（只读） |
 | lgtm | `grafana/otel-lgtm:0.37.0` | `lgtm` | `LGTM_GRAFANA_PORT`(3000) → 3000（Grafana）；`LGTM_OTLP_GRPC_PORT`(4317) → 4317；`LGTM_OTLP_HTTP_PORT`(4318) → 4318 | `lgtm-data` |
@@ -292,9 +292,10 @@ compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行�
 
 - `mysql/conf/`：MySQL 自定义配置（可选）。
 - `rocketmq/broker/conf/broker.conf`：RocketMQ broker 配置（启用 `rocketmq` profile 前必须准备）。
-- `seata/resources/`：Seata 配置（启用 `seata` profile 前需要准备）。
+- `seata/resources/application.yml`：Seata Server 配置。注册中心 Nacos（public 命名空间、`SEATA_GROUP`）、配置中心 file、存储 db（`seata` 库）；口令可用 `SEATA_DB_PASSWORD`、`SEATA_NACOS_USERNAME`、`SEATA_NACOS_PASSWORD` 等环境变量覆盖。镜像版本需与 `yudao-cloud` 的 Seata 客户端（`spring-cloud-alibaba-dependencies` 管理，当前 2.5.0）一致。
 
-<!-- TODO: 补充 broker.conf 与 seata/resources 的参考配置或获取方式 -->
+<!-- TODO: 补充 broker.conf 的参考配置或获取方式 -->
+<!-- TODO: 确认 Docker Hub 镜像 apache/seata-server:2.5.0 可拉取，并实际启动验证 seata/resources/application.yml -->
 
 ## Testing Instructions
 
@@ -397,8 +398,8 @@ kubectl apply --dry-run=client -f k8s/
 
 ### RocketMQ broker 或 Seata 起不来
 
-原因：compose 绑定挂载 `./rocketmq/broker/conf/broker.conf` 和 `./seata/resources`，但这两个路径当前不在仓库中。路径不存在时 Docker 会创建同名**目录**，broker 因读不到配置文件而失败；`ROCKETMQ_BROKER_IP` 在 compose 中没有被引用，需要写进 `broker.conf`（`brokerIP1`）才会生效。
-解决：启用 profile 前先准备好 `broker.conf`（如已误建为目录则先删除）和 `seata/resources/` 下的配置。
+原因：compose 绑定挂载 `./rocketmq/broker/conf/broker.conf`，但该路径当前不在仓库中。路径不存在时 Docker 会创建同名**目录**，broker 因读不到配置文件而失败；`ROCKETMQ_BROKER_IP` 在 compose 中没有被引用，需要写进 `broker.conf`（`brokerIP1`）才会生效。Seata 若起不来，检查 `seata/resources/application.yml` 中的 MySQL / Nacos 地址与口令，以及 `seata` 库是否已执行 `04-seata-schema.sql`。
+解决：启用 profile 前先准备好 `broker.conf`（如已误建为目录则先删除）。
 
 ### K8s 版 hostPath 挂载失败
 
