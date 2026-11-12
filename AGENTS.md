@@ -293,7 +293,7 @@ yudao-env/
 │   ├── nora/auth/              # NORA 鉴权用 users.htpasswd（bcrypt，不提交，仅提交 .gitkeep）
 │   └── tdengine/               # TDengine 建库说明
 ├── infra/                      # 基础环境安装配置，按系统环境分目录
-│   └── ubuntu-24.04/           # docker.md（Docker Engine）、k8s.md（kubeadm 集群 master + node）
+│   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md（K8s 单机 master+node）、k8s-cluster.md（K8s 集群 master + node）
 └── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
 ```
 

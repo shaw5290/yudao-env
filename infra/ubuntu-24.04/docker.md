@@ -28,11 +28,27 @@ done
 
 ## 2. 安装 Docker Engine
 
-国内服务器把下面的 `DOCKER_MIRROR` 换成阿里云镜像 `https://mirrors.aliyun.com/docker-ce`，海外直接用官方源。
+软件源地址二选一。国内服务器：
 
 ```bash
-DOCKER_MIRROR=https://download.docker.com        # 国内：https://mirrors.aliyun.com/docker-ce
+DOCKER_MIRROR=https://mirrors.aliyun.com/docker-ce
+```
 
+海外服务器：
+
+```bash
+DOCKER_MIRROR=https://download.docker.com
+```
+
+确认变量（输出为空说明没赋值或换了终端，重新执行上面一行；SSH 重连后也要重新赋值）：
+
+```bash
+echo $DOCKER_MIRROR
+```
+
+安装：
+
+```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -72,7 +88,7 @@ EOF
 | `data-root` | 镜像、容器、命名卷的存放目录，默认 `/var/lib/docker`；有数据盘时指向数据盘。**装好后再改要先迁移数据** |
 | `exec-opts` | cgroup 驱动用 systemd，与 kubelet 保持一致（同一台机器以后要加入 K8s 时不用再改） |
 | `log-opts` | 限制容器日志大小，避免 `docker logs` 撑满磁盘 |
-| `registry-mirrors` | Docker Hub 镜像加速地址，填自己可用的加速器（如阿里云容器镜像服务分配的专属地址）；也可以填本仓库 NORA 的 Docker 代理地址 |
+| `registry-mirrors` | Docker Hub 镜像加速地址。**国内服务器基本访问不了 Docker Hub，必须配置**，否则拉镜像（包括下面的 `hello-world`）会超时。填自己可用的加速器（如阿里云容器镜像服务分配的专属地址）；也可以填本仓库 NORA 的 Docker 代理地址 |
 
 使用 NORA（`--profile nora`）作为 HTTP 私有仓库时，还需要加 `"insecure-registries": ["<NORA 主机 IP>:4000"]`。
 
@@ -129,21 +145,19 @@ chmod +x compose/yudao.sh compose/services/*.sh
 
 - `.env` 中必须修改的口令见根目录 `README.md`；`compose/yudao.sh` 开头的 `DB_PASSWORD` 要与 `MYSQL_ROOT_PASSWORD` 一致，否则备份还原失败。
 - `ROCKETMQ_BROKER_IP`、`SEATA_IP` 填服务器内网 IP，不能写 `127.0.0.1`。
-- 所有端口都映射到宿主机所有网卡，**不要直接暴露到公网**，按下一节只对内网放行。
+- 所有端口都映射到宿主机所有网卡，**不要直接暴露到公网**，见下一节。
 
 ## 7. 防火墙
 
-只放行实际使用的端口，且限制来源网段。以核心服务为例（端口以 `.env` 为准）：
+本地部署不启用防火墙（最小化安装的 Ubuntu 没有 ufw，先安装，保持关闭）：
 
 ```bash
-sudo ufw allow OpenSSH        # 先放行 SSH，否则 enable 后会断开连接
-sudo ufw allow from 10.0.0.0/8 to any port 3306 proto tcp
-sudo ufw allow from 10.0.0.0/8 to any port 6379 proto tcp
-sudo ufw enable
-sudo ufw status
+sudo apt install -y ufw
+sudo ufw disable
+sudo ufw status        # Status: inactive
 ```
 
-注意：Docker 发布的端口通过 iptables 的 `DOCKER` 链转发，**会绕过 ufw 的规则**。需要严格限制时，在 `DOCKER-USER` 链中加规则，或者在云厂商安全组中限制。
+不开防火墙时服务器**只能放在内网**。要暴露到公网时，用云厂商安全组只放行必要端口并限制来源 IP；注意 Docker 发布的端口通过 iptables 的 `DOCKER` 链转发，**会绕过 ufw 的规则**，靠 ufw 限制不住。
 
 ## 常见问题
 
