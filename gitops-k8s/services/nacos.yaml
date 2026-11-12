@@ -105,17 +105,19 @@ spec:
               mountPath: /home/nacos/logs
             - name: plugins
               mountPath: /home/nacos/plugins
+          # 探针只检查 8848 端口（TCP），不依赖 HTTP 健康检查路径（nacos 3 下 8080/nacos/actuator/health 不可靠，曾导致存活探针反复杀进程）
+          startupProbe:          # 启动阶段最多等 5 分钟（30 次 × 10 秒），期间不做存活检查
+            tcpSocket:
+              port: 8848
+            periodSeconds: 10
+            failureThreshold: 30
           readinessProbe:
-            httpGet:
-              path: /nacos/actuator/health
-              port: 8080
-            initialDelaySeconds: 30
+            tcpSocket:
+              port: 8848
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /nacos/actuator/health
-              port: 8080
-            initialDelaySeconds: 30
+            tcpSocket:
+              port: 8848
             periodSeconds: 30
             failureThreshold: 3
       volumes:
