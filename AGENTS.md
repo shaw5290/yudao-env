@@ -248,7 +248,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 变量名用各镜像**原生环境变量名**（`POSTGRES_*`、`MINIO_ROOT_*`、`NACOS_AUTH_*`、`RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS`、`NORA_*`），清单中按同名取值、不改名；镜像没有原生变量的（redis 密码）用通用名 `REDIS_PASSWORD`。
 - 每个服务用 `secretKeyRef: { name: yudao-env, key: <同名> }` 只引用自己的键，**不用 `envFrom`** 整体注入；除可选的 `NORA_*` 外不加 `optional: true`，缺键时直接报错而不是带默认口令启动。
 - 端口写在 `services/<工具>.yaml` 的 `hostPort` 字面量，行尾注释 `# 宿主机端口，冲突时改这里（不读 .env）`；`.env.temp` 中不放端口变量。
-- 新增服务时同步 `kustomization.yaml` 的 `resources`、`.env.temp` 对应分组、`README.md` 的服务表和 Secret 键表。
+- 新增服务时同步 `kustomization.yaml` 的 `resources`、`.env.temp` 对应分组、`README.md` 的服务表和 Secret 键表、`SERVICES.md` 的地址和账号表（`SERVICES.md` 只写 Secret 键名，不写口令实际值）。
 - README 中的 kubectl 命令写完整的 `kubectl --context kubernetes-admin@kubernetes ...`，不用 `$K` 之类的变量缩写；每条命令单独一行，不用管道 `|` 和行尾 `\` 续行（粘贴时管道后半截会被截断、`\` 后多出空格会使续行失效），Secret 用 `delete secret --ignore-not-found` + `create secret --from-env-file` 先删再建。
 
 ### Windows 批处理（`compose\yudao.bat`、`k8s\yudao-k8s.bat`）

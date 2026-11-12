@@ -2,6 +2,8 @@
 
 在独立的 Kubernetes 集群（如 `infra/ubuntu-24.04/k8s-single.md` 搭建的 kubeadm 单机集群）上部署 yudao 的基础依赖。本目录从本机上传到服务器的 `/opt/yudao/gitops-k8s`，在服务器上执行 `kubectl apply -k`，不经过 Git 远程仓库。
 
+服务地址、端口、账号及查看口令的方法见 [SERVICES.md](SERVICES.md)。
+
 | 服务 | 镜像 | hostPort | 存储 |
 |---|---|---|---|
 | postgres | `postgres:16-alpine` | 5432 | `postgres-data` 5Gi |
