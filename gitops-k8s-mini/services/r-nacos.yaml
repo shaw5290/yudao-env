@@ -1,0 +1,97 @@
+# ==================== r-nacos（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+# r-nacos：Rust 实现的 Nacos，兼容 Nacos 1.x HTTP / 2.x、3.x gRPC 客户端协议，内置存储，单机内存占用几十 MB
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: r-nacos-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: r-nacos
+  labels:
+    app: r-nacos
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: r-nacos
+  template:
+    metadata:
+      labels:
+        app: r-nacos
+    spec:
+      containers:
+        - name: r-nacos
+          image: qingpan/rnacos:v0.8.8   # gnu（debian-slim）版；体积更小的 musl 版为 v0.8.8-alpine
+          ports:
+            - containerPort: 8848
+              hostPort: 8848    # 宿主机端口（HTTP API），冲突时改这里（不读 .env）
+            - containerPort: 9848
+              hostPort: 9848    # 宿主机端口（gRPC，客户端自动用 8848 + 1000），冲突时改这里（不读 .env）
+            - containerPort: 10848
+              hostPort: 10848   # 宿主机端口（控制台），冲突时改这里（不读 .env）
+          env:
+            - name: RNACOS_HTTP_PORT
+              value: "8848"
+            - name: RNACOS_DATA_DIR
+              value: /io/nacos_db   # 数据库目录，挂载 PVC
+            - name: RNACOS_GMT_OFFSET_HOURS
+              value: "8"            # 日志时区，容器内必须显式指定
+            - name: RNACOS_ENABLE_OPEN_API_AUTH
+              value: "false"        # 客户端接口不鉴权（与 yudao-cloud 默认配置兼容）；开启后客户端需配置控制台账号
+            # 以下取自 Secret yudao-env，键名与 r-nacos 原生变量一致；只在第一次启动（空库）时生效，之后在控制台改密码
+            - name: RNACOS_INIT_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: RNACOS_INIT_ADMIN_USERNAME }
+            - name: RNACOS_INIT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: RNACOS_INIT_ADMIN_PASSWORD }
+          startupProbe:
+            tcpSocket:
+              port: 8848
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            tcpSocket:
+              port: 9848
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8848
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /io/nacos_db
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: r-nacos-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: r-nacos
+spec:
+  selector:
+    app: r-nacos
+  ports:
+    - name: http
+      port: 8848
+      targetPort: 8848
+    - name: grpc
+      port: 9848
+      targetPort: 9848
+    - name: console
+      port: 10848
+      targetPort: 10848

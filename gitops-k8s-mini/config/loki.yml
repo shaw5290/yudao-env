@@ -1,0 +1,43 @@
+# Loki 单机配置：在 11notes/loki 镜像默认配置基础上增加 7 天保留期
+# 挂载为 /loki/etc/default.yml（见 ../services/loki.yaml）
+auth_enabled: false   # 单租户，写入和查询不需要 X-Scope-OrgID
+
+server:
+  http_listen_port: 3100
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki/var
+  storage:
+    filesystem:
+      chunks_directory: /loki/var/chunks
+      rules_directory: /loki/var/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h   # 日志保留 7 天，由 compactor 删除过期数据
+  allow_structured_metadata: true   # OTLP 写入的资源属性存为结构化元数据
+
+compactor:
+  working_directory: /loki/var/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+analytics:
+  reporting_enabled: false

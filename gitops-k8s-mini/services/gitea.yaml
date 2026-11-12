@@ -1,0 +1,103 @@
+# ==================== gitea（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply（Gitea 托管的就是这些清单本身）
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+# 最小配置：内置 SQLite（不依赖 MySQL / PostgreSQL），只开 HTTP（不开 SSH），关闭注册和软件包（制品统一放 NORA）
+# 配置项用 GITEA__<section>__<KEY> 环境变量写入 /data/gitea/conf/app.ini，每次启动都会覆盖对应项
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # SQLite 和仓库目录只允许单实例写入
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+        - name: gitea
+          image: gitea/gitea:28.3.0
+          ports:
+            - containerPort: 3000
+              hostPort: 3000   # 宿主机端口（Web、Git HTTP），冲突时改这里（不读 .env）；与 gitops-k8s 的 lgtm 冲突
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+            - name: GITEA__database__DB_TYPE
+              value: sqlite3   # 数据库文件在 /data/gitea/gitea.db
+            - name: GITEA__server__HTTP_PORT
+              value: "3000"
+            - name: GITEA__server__DISABLE_SSH
+              value: "true"    # 只用 HTTP 克隆 / 推送
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"    # 跳过安装向导，管理员账号用 gitea admin user create 创建，见 README
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"    # 关闭自助注册，账号由管理员创建
+            - name: GITEA__repository__ENABLE_PUSH_CREATE_USER
+              value: "true"    # 推送到不存在的个人仓库时自动创建（默认私有）
+            - name: GITEA__packages__ENABLED
+              value: "false"   # 镜像、Maven、npm 制品用 NORA
+            # 以下取自 Secret yudao-env，键名与 Gitea 原生环境变量一致；必填
+            - name: GITEA__server__ROOT_URL
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: GITEA__server__ROOT_URL }
+            - name: GITEA__security__SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: GITEA__security__SECRET_KEY }
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 36   # 首次启动初始化 SQLite，最多等 3 分钟
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+spec:
+  selector:
+    app: gitea
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

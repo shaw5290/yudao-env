@@ -1,0 +1,62 @@
+# ==================== gitops-sync（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用；最小的拉取式 GitOps：定时从 Gitea 浅克隆，对 GITOPS_PATH 执行 kubectl apply -k
+# 代替 Argo CD / Flux（不常驻进程、不占内存）；只新增 / 更新，不自动删除（删除见 README「GitOps 同步」）
+# ServiceAccount gitops-sync 及其 Role 在 ../bootstrap/，只能操作命名空间 yudao-mini
+# 同步脚本 ../config/gitops-sync.sh 经 configMapGenerator 生成 ConfigMap；仓库地址、Token 来自 Secret yudao-env
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitops-sync
+  labels:
+    app: gitops-sync
+spec:
+  schedule: "*/2 * * * *"     # 每 2 分钟同步一次；推送后最多 2 分钟生效
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid   # 上一次未结束时跳过本次
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0                 # 失败不重试，等下一个周期
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: gitops-sync
+        spec:
+          serviceAccountName: gitops-sync
+          restartPolicy: Never
+          containers:
+            - name: sync
+              image: alpine/k8s:1.36.2   # 含 git、kubectl；标签为 kubectl 版本，与集群版本（k8s-single.md 为 v1.36.2）保持一致
+              command: ["sh", "/scripts/sync.sh"]
+              env:
+                # 以下取自 Secret yudao-env，均可选；未配置 GITOPS_REPO_URL 时脚本直接跳过，不报错
+                - name: GITOPS_REPO_URL
+                  valueFrom:
+                    secretKeyRef: { name: yudao-env, key: GITOPS_REPO_URL, optional: true }
+                - name: GITOPS_BRANCH
+                  valueFrom:
+                    secretKeyRef: { name: yudao-env, key: GITOPS_BRANCH, optional: true }
+                - name: GITOPS_PATH
+                  valueFrom:
+                    secretKeyRef: { name: yudao-env, key: GITOPS_PATH, optional: true }
+                - name: GITOPS_GIT_USERNAME
+                  valueFrom:
+                    secretKeyRef: { name: yudao-env, key: GITOPS_GIT_USERNAME, optional: true }
+                - name: GITOPS_GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: yudao-env, key: GITOPS_GIT_TOKEN, optional: true }
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+          volumes:
+            - name: scripts
+              configMap:
+                name: gitops-sync-script
+            - name: work
+              emptyDir: {}

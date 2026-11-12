@@ -1,0 +1,88 @@
+# ==================== loki（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath
+# 11notes/loki：distroless、无 shell，以 1000:1000 运行；配置固定读 /loki/etc/default.yml，
+# 由 ../config/loki.yml 经 configMapGenerator 生成（ConfigMap 名带哈希，改配置后自动滚动更新）
+# 日志写入：yudao-cloud 直接用 OTLP HTTP 上报到 http://<节点IP>:3100/otlp/v1/logs，不需要 Collector
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  labels:
+    app: loki
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000   # PVC 归 1000 组，镜像用户可写
+      containers:
+        - name: loki
+          image: 11notes/loki:3.7.9
+          securityContext:
+            readOnlyRootFilesystem: true   # 镜像设计为只读运行，可写目录只有 /loki/var
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 3100
+              hostPort: 3100   # 宿主机端口（HTTP API、OTLP），冲突时改这里（不读 .env）
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 15   # ingester 就绪后还要等 15 秒才返回 ready
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /metrics   # 与镜像自带 HEALTHCHECK 一致
+              port: 3100
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: config
+              mountPath: /loki/etc
+              readOnly: true
+            - name: data
+              mountPath: /loki/var
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: loki-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+spec:
+  selector:
+    app: loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: 3100

@@ -1,0 +1,68 @@
+# ==================== postgres（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply；从 gitops-k8s/services/postgres.yaml 复制，两边分开维护
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              hostPort: 5432   # 宿主机端口，冲突时改这里（不读 .env）
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: POSTGRES_DB
+              value: ruoyi-vue-pro   # 首次初始化时直接建业务库（代替 config/postgres/initdb/01）；库名由表结构脚本决定，不放 .env
+            # 以下取自 Secret yudao-env，键名与 postgres 镜像原生变量一致
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_PASSWORD }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

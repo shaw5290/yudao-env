@@ -1,0 +1,78 @@
+# ==================== rabbitmq（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply；从 gitops-k8s/services/rabbitmq.yaml 复制，两边分开维护
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  labels:
+    app: rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      hostname: rabbitmq   # 数据目录按节点名（rabbit@<hostname>）存放，固定 hostname 避免 Pod 重建后数据丢失
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.1-management
+          ports:
+            - containerPort: 5672
+              hostPort: 5672    # 宿主机端口，冲突时改这里（不读 .env）
+            - containerPort: 15672
+              hostPort: 15672   # 宿主机端口，冲突时改这里（不读 .env）
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            # 以下取自 Secret yudao-env，键名与 rabbitmq 镜像原生变量一致；必填，只在 rabbitmq-data 首次初始化时生效
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: RABBITMQ_DEFAULT_USER }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: RABBITMQ_DEFAULT_PASS }
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: 5672
+    - name: management
+      port: 15672
+      targetPort: 15672

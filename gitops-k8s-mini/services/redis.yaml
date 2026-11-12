@@ -1,0 +1,44 @@
+# ==================== redis（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply；从 gitops-k8s/services/redis.yaml 复制，两边分开维护
+# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 使用 hostPort，单节点上新旧 Pod 不能同时占用端口，先停旧 Pod
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - containerPort: 6379
+              hostPort: 6379   # 宿主机端口，冲突时改这里（不读 .env）
+          env:
+            # redis 官方镜像没有密码环境变量，沿用通用名 REDIS_PASSWORD（bitnami 镜像、Spring 配置同名），经 --requirepass 传入
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: REDIS_PASSWORD }
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
