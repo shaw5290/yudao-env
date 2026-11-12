@@ -1,6 +1,6 @@
 # yudao-env
 
-`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis 核心依赖，以及 Nacos、TDengine、Nginx、Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL、Grafana LGTM、ELK、RabbitMQ 等可选中间件。
+`yudao-cloud` 本地开发环境的 Docker Compose 配置，一键拉起 MySQL、Redis 核心依赖，以及 Nacos、TDengine、Nginx、Jenkins、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、PostgreSQL、Grafana LGTM、ELK、RabbitMQ、NORA（Docker / Maven / npm 制品仓库）等可选中间件。
 
 ## 目录结构
 
@@ -18,6 +18,7 @@ env/
 ├── rocketmq/broker/conf/       # RocketMQ broker.conf
 ├── seata/resources/            # Seata Server 配置（application.yml）
 ├── elk/logstash/pipeline/      # Logstash pipeline（tcp json_lines → Elasticsearch）
+├── nora/auth/                  # NORA 开启鉴权时的 users.htpasswd（不提交）
 └── backups/                    # 数据库备份输出目录（脚本自动生成）
 ```
 
@@ -30,7 +31,7 @@ env/
    ```
    必须修改的几项：`MYSQL_ROOT_PASSWORD`、`REDIS_PASSWORD`、`NACOS_DB_PASSWORD`、`NACOS_AUTH_TOKEN`（见下方"Nacos 鉴权"）、`MINIO_ROOT_PASSWORD`、`ROCKETMQ_BROKER_IP`、`RABBITMQ_PASSWORD`（如需启用 RabbitMQ）、`SEATA_IP`、`POSTGRES_PASSWORD`（如需启用 PostgreSQL）。
 3. 双击运行 `toggle-yudao.bat`，选 **1（启动核心）**。首次启动会自动执行 `mysql/initdb` 下的建库脚本。
-4. 核心服务起来后，按需通过菜单单独启动 Nacos / TDengine / Nginx / Jenkins / MinIO / RocketMQ / RabbitMQ / XXL-Job / Seata / Sentinel / PostgreSQL。
+4. 核心服务起来后，按需通过菜单单独启动 Nacos / TDengine / Nginx / Jenkins / MinIO / RocketMQ / RabbitMQ / XXL-Job / Seata / Sentinel / PostgreSQL / NORA。
 
 ## 服务清单
 
@@ -58,6 +59,7 @@ env/
 | postgres | postgres:16-alpine | `POSTGRES_PORT`→5432 | postgres |
 | lgtm | grafana/otel-lgtm:0.37.0 | `LGTM_GRAFANA_PORT`(3000) / `LGTM_OTLP_GRPC_PORT`(4317) / `LGTM_OTLP_HTTP_PORT`(4318) | lgtm |
 | elasticsearch / logstash / kibana | docker.elastic.co/*:8.19.23 | `ELASTICSEARCH_PORT`(9200) / `LOGSTASH_TCP_PORT`(5044) / `KIBANA_PORT`(5601) | elk |
+| nora | ghcr.io/getnora-io/nora:1.4.4 | `NORA_PORT`(4000，Docker / Maven / npm / Web UI 共用) | nora |
 
 > `postgres` 是 yudao-cloud 切换到 PostgreSQL 时使用的数据库（后端设置 `DB_PRIMARY=postgresql`，默认连接 `127.0.0.1:5432/ruoyi-vue-pro`、`postgres` / `123456`）。首次启动会自动执行 `postgres/initdb` 下的脚本建库 `ruoyi-vue-pro` 并导入表结构，见下方"数据库初始化"。账号密码见 `.env` 里的 `POSTGRES_USER` / `POSTGRES_PASSWORD`，需与后端的 `PG_USERNAME` / `PG_PASSWORD` 一致。
 
@@ -114,6 +116,45 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 
 如果暂时不需要用 IoT 模块，不启动 `IoTServerApplication` 即可，不影响其他服务。
 
+## NORA（制品仓库）
+
+[NORA](https://github.com/getnora-io/nora) 是单文件、无数据库的制品仓库，这里只启用 Docker、Maven、npm 三种仓库（`NORA_REGISTRIES_ENABLE=docker,maven,npm`）。每种仓库既能存放自己发布的制品，也能代理缓存上游：Maven 默认回源阿里云 + Maven Central，npm 回源 npmmirror，Docker 回源 Docker Hub（`.env` 的 `NORA_MAVEN_PROXIES`、`NORA_NPM_PROXY`、`NORA_DOCKER_PROXIES` 可改）。数据保存在 `nora-data` 卷。镜像放在 ghcr.io（Docker Hub 上的 `getnora/nora` 是同一个镜像）。
+
+| 用途 | 地址 |
+|---|---|
+| Web UI | `http://127.0.0.1:4000/ui/` |
+| Docker 镜像仓库 | `localhost:4000`（如 `localhost:4000/yudao/system-server:<tag>`） |
+| Maven 仓库 | `http://127.0.0.1:4000/maven2/` |
+| npm 仓库 | `http://127.0.0.1:4000/npm/` |
+| 健康检查 / 指标 | `/health`、`/metrics` |
+
+**Maven**：在 `~/.m2/settings.xml` 里把 NORA 配成镜像（拉依赖走 NORA 缓存）：
+
+```xml
+<mirrors>
+  <mirror>
+    <id>nora</id>
+    <mirrorOf>*</mirrorOf>
+    <url>http://127.0.0.1:4000/maven2/</url>
+  </mirror>
+</mirrors>
+```
+
+`mvn deploy` 发布时，在 pom 的 `distributionManagement` 中把 `repository` 和 `snapshotRepository` 都指向 `http://127.0.0.1:4000/maven2/`（NORA 不区分 release / snapshot 仓库）。开启鉴权后，在 `settings.xml` 的 `<servers>` 里为对应 id 配置账号。注意：release 版本不可覆盖，同一版本重复上传返回 `409`；SNAPSHOT 依赖 Maven 自己上传的 `maven-metadata.xml`，NORA 不会自动生成。
+
+**npm**：`npm config set registry http://127.0.0.1:4000/npm/`（pnpm 同理）。返回的 tarball 下载地址按 `NORA_PUBLIC_URL` 生成，所以局域网其他机器访问时，要把它改成宿主机 IP 并重建容器。
+
+**Docker**：`docker tag <镜像> localhost:4000/yudao/<名称>:<tag>`，再 `docker push localhost:4000/yudao/<名称>:<tag>`。Docker Desktop 默认把 `127.0.0.0/8` 当作 insecure registry，本机走 HTTP 可以直接推送和拉取；其他机器需要在 Docker Engine 配置的 `insecure-registries` 中加入 `<宿主机IP>:4000`。
+
+**鉴权**（默认关闭，任何人都能读写，只适合本机开发）：
+1. 生成 bcrypt 格式的 htpasswd（在 cmd 中执行；PowerShell 的 `>` 会写成 UTF-16，不能用）：
+   ```bat
+   docker run --rm httpd:2.4-alpine htpasswd -nbB admin <密码> > nora\auth\users.htpasswd
+   ```
+   添加更多用户时，把命令输出追加到同一个文件。该文件已在 `.gitignore` 中，不会提交。
+2. `.env` 中设置 `NORA_AUTH_ENABLED=true`，然后重新启动 NORA（菜单 `43`）。
+3. 开启后上传 / 推送必须带账号（`docker login localhost:4000`，Maven 在 `<servers>` 中配置账号）；`NORA_AUTH_ANONYMOUS_READ`、`NORA_AUTH_DOCKER_ANON_PULL` 默认为 `true`，即 Maven / npm 下载和镜像拉取仍可匿名，K8s 节点拉镜像不用配 `imagePullSecrets`。CI 中建议在 Web UI 创建 API Token（`nra_` 开头）代替密码。
+
 ## toggle-yudao.bat 菜单说明
 
 双击运行后是一个交互式菜单，输入编号回车执行：
@@ -126,7 +167,7 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 - `5` 查看核心服务日志（Ctrl+C 退出）
 - `6` 强制重建核心服务（改了镜像版本、环境变量后用这个）
 
-**中间件（单独启停）**：`10`/`20` TDengine，`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`18`/`28` Nacos，`19`/`29` Grafana LGTM，`40`/`50` Nginx，`41`/`51` ELK，`42`/`52` RabbitMQ；`7`/`8` 一键启停全部中间件（`8` 只停中间件，mysql/redis 保持运行）。
+**中间件（单独启停）**：`10`/`20` TDengine，`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`18`/`28` Nacos，`19`/`29` Grafana LGTM，`40`/`50` Nginx，`41`/`51` ELK，`42`/`52` RabbitMQ，`43`/`53` NORA；`7`/`8` 一键启停全部中间件（`8` 只停中间件，mysql/redis 保持运行）。
 
 单独停止中间件时，有命名数据卷的服务会询问“是否同时删除容器和数据卷”，**默认 N**（直接回车）只停止、保留数据；输入 `y` 会删除该中间件的容器及其数据卷（如 MinIO 的 `yudao_minio-data`），数据不可恢复。Seata、Nginx 没有命名卷，直接停止不询问。
 
@@ -154,11 +195,12 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 - **端口是写死的字面量**：K8s 的 `hostPort` 字段不支持变量替换，所以 `k8s/*.yaml` 里的端口直接写成了 `.env.temp` 的默认值（3306/6379/8848/9000 等），每个端口旁边都有注释标注对应 `.env` 里的哪个变量。如果本机端口冲突，需要直接改 YAML 文件里的数字，改完 `.env` 里对应的变量仅供人工核对，不会被自动同步进 YAML。
 - **没有 `PROJECT_NAME` 前缀**：compose 版本用前缀区分同一台机器上的多套环境，K8s 版本用 `yudao` 这个 Namespace 天然隔离，资源名就是 `mysql`、`nacos` 这种简单名字，不支持多环境并存（要多套就开多个 Namespace，需要自行改清单）。
 - **数据卷**：对应 compose 里的 named volume（`mysql-data`、`nacos-data`、`minio-data` 等）都改成了 `PersistentVolumeClaim`，走 Docker Desktop 默认 StorageClass 动态供给；`mysql/initdb`、`mysql/conf`、`rocketmq/broker/conf`、`seata/resources` 这几个需要挂载仓库真实文件的，用 `hostPath` 挂载 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`（Docker Desktop for Windows 固定的宿主机路径映射规则，盘符小写）。**如果这个仓库不是放在 `D:\sourceCode\yudao\env`，需要手动把 `k8s/*.yaml` 里所有 `hostPath.path` 改成实际路径对应的映射。**
-- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `19-rabbitmq.yaml` 十个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
+- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `20-nora.yaml` 十一个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
+- **NORA 鉴权**：`20-nora.yaml` 从 Secret `yudao-env` 读取 `NORA_*` 变量，从 Secret `nora-htpasswd` 挂载 htpasswd。菜单 `43` / `7` 启动前，如果 `nora\auth\users.htpasswd` 存在，会自动把它同步为 `nora-htpasswd`。节点拉取 NORA 中的镜像时用 `localhost:4000/...`（`hostPort` 4000）。
 
 ### toggle-yudao-k8s.bat 菜单说明
 
-菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52`、`43`/`53` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
 - `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
 - `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
 

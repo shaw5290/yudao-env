@@ -15,8 +15,8 @@ set VOLUME_PREFIX=yudao
 REM 核心服务（不带 profile，up -d 默认只启动这些）
 set CORE_SERVICES=mysql redis
 REM 所有中间件 profile / 服务（新增中间件时同步这两行）
-set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq
-set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana rabbitmq
+set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora
+set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana rabbitmq nora
 
 REM ---- 数据库备份配置 ----
 set DB_CONTAINER=yudao-mysql
@@ -65,6 +65,7 @@ echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     40. 启动 Nginx          50. 停止 Nginx
 echo     41. 启动 ELK            51. 停止 ELK
 echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
+echo     43. 启动 NORA           53. 停止 NORA
 echo     （停止中间件时会询问是否同时删除数据卷，默认 N 保留数据）
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)
@@ -115,6 +116,8 @@ if "%choice%"=="41" goto :elk_up
 if "%choice%"=="51" goto :elk_down
 if "%choice%"=="42" goto :rabbitmq_up
 if "%choice%"=="52" goto :rabbitmq_down
+if "%choice%"=="43" goto :nora_up
+if "%choice%"=="53" goto :nora_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -385,6 +388,22 @@ goto :menu
 echo.
 echo [信息] 停止 RabbitMQ...
 call :middleware_down rabbitmq "rabbitmq" "rabbitmq-data"
+pause
+goto :menu
+
+REM ================= NORA =================
+:nora_up
+echo.
+echo [信息] 启动 NORA 制品仓库（Docker / Maven / npm）...
+%CMD% --profile nora up -d nora
+echo [信息] Web UI：http://127.0.0.1:4000/ui/，镜像仓库：localhost:4000，Maven：http://127.0.0.1:4000/maven2/，npm：http://127.0.0.1:4000/npm/
+pause
+goto :menu
+
+:nora_down
+echo.
+echo [信息] 停止 NORA...
+call :middleware_down nora "nora" "nora-data"
 pause
 goto :menu
 

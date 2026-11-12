@@ -11,6 +11,8 @@ set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemR
 set NAMESPACE=yudao
 set K8S_DIR=k8s
 set ENV_FILE=.env
+REM NORA 开启鉴权时使用的 htpasswd（不提交），存在时同步为 Secret nora-htpasswd
+set NORA_HTPASSWD=nora\auth\users.htpasswd
 
 REM ---- 数据库备份配置 ----
 set DB_DEPLOY=deploy/mysql
@@ -61,6 +63,7 @@ echo     17. 启动 PostgreSQL     27. 停止 PostgreSQL
 echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     41. 启动 ELK            51. 停止 ELK
 echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
+echo     43. 启动 NORA           53. 停止 NORA
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 清空所有数据卷 (PVC，危险！会删除所有数据)
@@ -105,6 +108,8 @@ if "%choice%"=="41" goto :elk_up
 if "%choice%"=="51" goto :elk_down
 if "%choice%"=="42" goto :rabbitmq_up
 if "%choice%"=="52" goto :rabbitmq_down
+if "%choice%"=="43" goto :nora_up
+if "%choice%"=="53" goto :nora_down
 if "%choice%"=="31" goto :db_backup
 if "%choice%"=="32" goto :db_restore
 if "%choice%"=="33" goto :db_list
@@ -119,6 +124,12 @@ goto :menu
 REM ================= 核心 =================
 :sync_secret
 kubectl create secret generic yudao-env --from-env-file=%ENV_FILE% -n %NAMESPACE% --dry-run=client -o yaml | kubectl apply -f -
+exit /b
+
+:sync_nora_htpasswd
+if exist "%NORA_HTPASSWD%" (
+    kubectl create secret generic nora-htpasswd --from-file=users.htpasswd=%NORA_HTPASSWD% -n %NAMESPACE% --dry-run=client -o yaml | kubectl apply -f -
+)
 exit /b
 
 :start
@@ -214,7 +225,8 @@ REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-kubectl apply -f %K8S_DIR%\10-jenkins.yaml -f %K8S_DIR%\11-minio.yaml -f %K8S_DIR%\12-rocketmq.yaml -f %K8S_DIR%\13-xxljob.yaml -f %K8S_DIR%\14-seata.yaml -f %K8S_DIR%\15-sentinel.yaml -f %K8S_DIR%\16-postgres.yaml -f %K8S_DIR%\17-lgtm.yaml -f %K8S_DIR%\18-elk.yaml -f %K8S_DIR%\19-rabbitmq.yaml
+call :sync_nora_htpasswd
+kubectl apply -f %K8S_DIR%\10-jenkins.yaml -f %K8S_DIR%\11-minio.yaml -f %K8S_DIR%\12-rocketmq.yaml -f %K8S_DIR%\13-xxljob.yaml -f %K8S_DIR%\14-seata.yaml -f %K8S_DIR%\15-sentinel.yaml -f %K8S_DIR%\16-postgres.yaml -f %K8S_DIR%\17-lgtm.yaml -f %K8S_DIR%\18-elk.yaml -f %K8S_DIR%\19-rabbitmq.yaml -f %K8S_DIR%\20-nora.yaml
 kubectl get pods -n %NAMESPACE%
 echo.
 pause
@@ -223,7 +235,7 @@ goto :menu
 :profile_all_down
 echo.
 echo [信息] 正在停止所有中间件（保留数据卷）...
-kubectl delete deployment/jenkins service/jenkins deployment/minio service/minio deployment/rocketmq-namesrv service/rocketmq-namesrv deployment/rocketmq-broker service/rocketmq-broker deployment/xxl-job-admin service/xxl-job-admin deployment/seata-server service/seata-server deployment/sentinel-dashboard service/sentinel-dashboard deployment/postgres service/postgres deployment/lgtm service/lgtm deployment/elasticsearch service/elasticsearch deployment/logstash service/logstash deployment/kibana service/kibana deployment/rabbitmq service/rabbitmq -n %NAMESPACE% --ignore-not-found
+kubectl delete deployment/jenkins service/jenkins deployment/minio service/minio deployment/rocketmq-namesrv service/rocketmq-namesrv deployment/rocketmq-broker service/rocketmq-broker deployment/xxl-job-admin service/xxl-job-admin deployment/seata-server service/seata-server deployment/sentinel-dashboard service/sentinel-dashboard deployment/postgres service/postgres deployment/lgtm service/lgtm deployment/elasticsearch service/elasticsearch deployment/logstash service/logstash deployment/kibana service/kibana deployment/rabbitmq service/rabbitmq deployment/nora service/nora -n %NAMESPACE% --ignore-not-found
 echo.
 echo [完成] 中间件已全部停止。
 pause
@@ -364,6 +376,23 @@ goto :menu
 echo.
 echo [信息] 停止 RabbitMQ（保留数据卷）...
 kubectl delete deployment/rabbitmq service/rabbitmq -n %NAMESPACE% --ignore-not-found
+pause
+goto :menu
+
+REM ================= NORA =================
+:nora_up
+echo.
+echo [信息] 启动 NORA 制品仓库（Docker / Maven / npm）...
+call :sync_nora_htpasswd
+kubectl apply -f %K8S_DIR%\20-nora.yaml
+echo [信息] Web UI：http://127.0.0.1:4000/ui/，镜像仓库：localhost:4000，Maven：http://127.0.0.1:4000/maven2/，npm：http://127.0.0.1:4000/npm/
+pause
+goto :menu
+
+:nora_down
+echo.
+echo [信息] 停止 NORA（保留数据卷）...
+kubectl delete deployment/nora service/nora -n %NAMESPACE% --ignore-not-found
 pause
 goto :menu
 

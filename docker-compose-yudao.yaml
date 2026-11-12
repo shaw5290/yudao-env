@@ -217,6 +217,34 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
 
+  # ==================== NORA（制品仓库：Docker / Maven / npm）====================
+  # 自建镜像 + 代理缓存：Docker 走 /v2/、Maven 走 /maven2/、npm 走 /npm/，Web UI 为 /ui/
+  nora:
+    container_name: ${PROJECT_NAME:-yudao}-nora
+    image: ghcr.io/getnora-io/nora:1.4.4
+    restart: always
+    profiles: ["nora"]
+    stop_grace_period: 30s # 停止时需要刷新审计日志和 token 使用记录，默认 10s 会被提前杀掉
+    ports:
+      - "${NORA_PORT:-4000}:4000"   # Docker / Maven / npm / Web UI 共用一个端口
+    environment:
+      TZ: Asia/Shanghai
+      NORA_HOST: 0.0.0.0
+      NORA_PORT: 4000
+      NORA_PUBLIC_URL: ${NORA_PUBLIC_URL:-http://localhost:${NORA_PORT:-4000}}   # npm tarball 等下载地址的前缀，必须是客户端可访问的地址
+      NORA_REGISTRIES_ENABLE: docker,maven,npm   # 只启用这三种仓库
+      NORA_CURATION_MODE: "off"   # 不审查上游包；1.5.0 起代理仓库必须显式设置该项
+      NORA_MAVEN_PROXIES: ${NORA_MAVEN_PROXIES:-https://maven.aliyun.com/repository/public,https://repo1.maven.org/maven2}
+      NORA_NPM_PROXY: ${NORA_NPM_PROXY:-https://registry.npmmirror.com}
+      NORA_DOCKER_PROXIES: ${NORA_DOCKER_PROXIES:-https://registry-1.docker.io}
+      NORA_AUTH_ENABLED: ${NORA_AUTH_ENABLED:-false}
+      NORA_AUTH_ANONYMOUS_READ: ${NORA_AUTH_ANONYMOUS_READ:-true}     # 开启鉴权后 Maven / npm 仍可匿名下载
+      NORA_AUTH_DOCKER_ANON_PULL: ${NORA_AUTH_DOCKER_ANON_PULL:-true} # 开启鉴权后镜像仍可匿名拉取（K8s 节点拉镜像不用配凭据）
+      NORA_AUTH_HTPASSWD_FILE: /etc/nora/auth/users.htpasswd          # 开启鉴权时才读取
+    volumes:
+      - nora-data:/data
+      - ./nora/auth:/etc/nora/auth:ro
+
   xxl-job-admin:
     container_name: ${PROJECT_NAME:-yudao}-xxl-job-admin
     image: xuxueli/xxl-job-admin:2.4.1
@@ -342,6 +370,7 @@ volumes:
   rocketmq-broker-logs:
   rocketmq-broker-store:
   rabbitmq-data:
+  nora-data:
   xxl-job-logs:
   sentinel-logs:
   tdengine-data:

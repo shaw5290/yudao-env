@@ -44,6 +44,7 @@
 | elasticsearch | `docker.elastic.co/elasticsearch/elasticsearch:8.19.23` | `elk` | `ELASTICSEARCH_PORT`(9200) → 9200 | `elasticsearch-data` |
 | logstash | `docker.elastic.co/logstash/logstash:8.19.23` | `elk` | `LOGSTASH_TCP_PORT`(5044) → 5044（tcp + json_lines，应用上报日志） | 绑定挂载 `./elk/logstash/pipeline`（只读） |
 | kibana | `docker.elastic.co/kibana/kibana:8.19.23` | `elk` | `KIBANA_PORT`(5601) → 5601 | 无 |
+| nora | `ghcr.io/getnora-io/nora:1.4.4` | `nora` | `NORA_PORT`(4000) → 4000（Docker `/v2/`、Maven `/maven2/`、npm `/npm/`、Web UI `/ui/` 共用） | `nora-data`；绑定挂载 `./nora/auth`（只读，放 `users.htpasswd`，不提交） |
 
 依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`logstash`、`kibana` 依赖 `elasticsearch`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 未配置或留空时默认 `yudao`。
 
@@ -52,7 +53,7 @@
 | 分组 | 变量 |
 |---|---|
 | 项目 | `PROJECT_NAME` |
-| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`RABBITMQ_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT` |
+| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`RABBITMQ_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT`、`NORA_PORT` |
 | MySQL | `MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | Nacos 连接 MySQL | `NACOS_DB_NAME`、`NACOS_DB_USER`、`NACOS_DB_PASSWORD` |
@@ -60,6 +61,7 @@
 | MinIO | `MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD` |
 | RocketMQ | `ROCKETMQ_BROKER_IP`（宿主机 IP，不能写 `127.0.0.1`） |
 | RabbitMQ | `RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`（与 yudao-cloud 同名；只在数据卷首次初始化时生效） |
+| NORA | `NORA_PUBLIC_URL`（npm tarball 等下载地址前缀）、`NORA_MAVEN_PROXIES`、`NORA_NPM_PROXY`、`NORA_DOCKER_PROXIES`、`NORA_AUTH_ENABLED`、`NORA_AUTH_ANONYMOUS_READ`、`NORA_AUTH_DOCKER_ANON_PULL` |
 | XXL-Job | `XXL_JOB_DB_NAME` |
 | Seata | `SEATA_IP`（宿主机 IP） |
 
@@ -97,7 +99,7 @@ docker compose -f docker-compose-yudao.yaml --profile minio stop minio
 docker compose -f docker-compose-yudao.yaml --profile rocketmq up -d          # namesrv + broker
 
 # 停止全部（含所有 profile，保留数据卷）
-docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq down
+docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq --profile nora down
 ```
 
 K8s 版（与 `toggle-yudao-k8s.bat` 内部命令一致）：
@@ -125,7 +127,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 | 6 | 强制重建核心（`--force-recreate`） | 重新 apply 核心清单 + rollout restart |
 | 7 / 8 | 启动 / 停止全部中间件（`8` 用 `stop`，不影响 mysql/redis） | 同左（apply / delete `10`~`15` 清单的 Deployment、Service） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 10~19 / 20~29、40~42 / 50~52 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52），仅 18/28、10/20、40/50 为 Compose 版独有；停止时经子程序 `:middleware_down` 询问是否删除数据卷（默认 N 只 `stop`；`y` 则 `rm -s -f` 后 `docker volume rm yudao_<卷名>`），无命名卷的 Seata、Nginx 直接 `stop` | 11~17、19、41、42 / 21~27、29、51、52 同左 |
+| 10~19 / 20~29、40~43 / 50~53 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52）、NORA（43/53），仅 18/28、10/20、40/50 为 Compose 版独有；停止时经子程序 `:middleware_down` 询问是否删除数据卷（默认 N 只 `stop`；`y` 则 `rm -s -f` 后 `docker volume rm yudao_<卷名>`），无命名卷的 Seata、Nginx 直接 `stop` | 11~17、19、41~43 / 21~27、29、51~53 同左（NORA 启动前把 `nora\auth\users.htpasswd` 同步为 Secret `nora-htpasswd`） |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -152,7 +154,7 @@ kubectl delete deployment/minio service/minio -n yudao --ignore-not-found    # �
 需要重新执行 initdb 时（会删除所有数据，先备份）：
 
 ```bash
-docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq down -v
+docker compose -f docker-compose-yudao.yaml --profile jenkins --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile rabbitmq --profile nora down -v
 docker compose -f docker-compose-yudao.yaml up -d
 ```
 
@@ -212,7 +214,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射并带缺省值：`"${XXX_PORT:-<默认端口>}:<容器端口>"`，带引号，缺省值与 `.env.temp` 一致（`.env` 未配置时仍使用默认端口，而不是随机端口）；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/` 对应清单的 `hostPort`。
 - 所有变量都写成 `${VAR:-<缺省值>}`，保证没有 `.env` 也能直接启动；口令类缺省值只用于本地开发，须与 `toggle-yudao.bat` 的 `DB_PASSWORD`、`mysql/initdb/01-create-databases.sql` 中的用户口令保持一致。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），并在文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才用 `./` 相对路径绑定挂载。
-- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`、`rabbitmq`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
+- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务名对应（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`、`rabbitmq`、`nora`）；新增 profile 时同步更新 `toggle-yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES` 和菜单，以及 `toggle-yudao-k8s.bat`。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - 时区统一 `TZ: Asia/Shanghai`；JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
@@ -269,6 +271,7 @@ yudao-env/
 │   └── initdb/                 # PostgreSQL 首次初始化脚本（01 建库 ~ 03 Quartz）
 ├── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
 ├── elk/logstash/pipeline/      # Logstash pipeline：tcp json_lines（5044）→ Elasticsearch 索引 yudao-logs-YYYY.MM.dd
+├── nora/auth/                  # NORA 鉴权用 users.htpasswd（bcrypt，不提交，仅提交 .gitkeep）
 └── k8s/
     ├── 00-namespace.yaml       # Namespace yudao
     ├── 01-mysql.yaml           # PVC + Deployment + Service（hostPath 挂载 mysql/conf、mysql/initdb）
@@ -285,7 +288,8 @@ yudao-env/
     ├── 16-postgres.yaml
     ├── 17-lgtm.yaml            # Grafana LGTM（OTel Collector + Loki + Tempo + Prometheus + Grafana）
     ├── 18-elk.yaml             # ELK：Elasticsearch + Logstash（pipeline 用 ConfigMap 内联）+ Kibana
-    └── 19-rabbitmq.yaml        # RabbitMQ（含管理控制台）
+    ├── 19-rabbitmq.yaml        # RabbitMQ（含管理控制台）
+    └── 20-nora.yaml            # NORA 制品仓库（Docker / Maven / npm），htpasswd 来自 Secret nora-htpasswd
 ```
 
 compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行，需要时自行创建）：
@@ -361,6 +365,7 @@ kubectl apply --dry-run=client -f k8s/
 - **端口暴露**：所有服务都把端口映射到宿主机所有网卡（compose 的 `ports` 未绑定 `127.0.0.1`，K8s 用 `hostPort`），只适合本地开发，不要在公网或共享网络中直接使用。
 - **Jenkins 权限**：jenkins 以 `user: root` 运行并挂载 `/var/run/docker.sock`，等同于拥有宿主机 Docker 控制权；Nacos 使用 `privileged: true`。
 - **Nacos 鉴权**：`NACOS_AUTH_TOKEN` 用 `openssl rand -base64 32` 生成，不要复用模板值。
+- **NORA 鉴权默认关闭**：`NORA_AUTH_ENABLED=false` 时任何能访问 4000 端口的人都能推送镜像、上传制品。开启鉴权需先生成 `nora/auth/users.htpasswd`（bcrypt，已在 `.gitignore`），不要提交该文件，也不要把 API Token 写进仓库。
 - **备份文件含业务数据**：`backups/*.sql` 是完整数据库导出，提交前确认不含敏感数据。
 - K8s 的 Secret `yudao-env` 由 `.env` 整体生成，包含全部变量，不要导出或提交其 YAML。
 

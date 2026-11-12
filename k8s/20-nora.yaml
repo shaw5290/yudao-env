@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nora-data
+  namespace: yudao
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nora
+  namespace: yudao
+  labels:
+    app: nora
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 本地存储只允许单写入实例
+  selector:
+    matchLabels:
+      app: nora
+  template:
+    metadata:
+      labels:
+        app: nora
+    spec:
+      terminationGracePeriodSeconds: 30   # 对应 compose 的 stop_grace_period，停止时刷新审计日志和 token 使用记录
+      securityContext:
+        fsGroup: 101   # 镜像以 nora 用户（uid 100 / gid 101）运行
+      containers:
+        - name: nora
+          image: ghcr.io/getnora-io/nora:1.4.4
+          ports:
+            - containerPort: 4000
+              hostPort: 4000   # 对应 .env 的 NORA_PORT，冲突时改这里
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: NORA_HOST
+              value: 0.0.0.0
+            - name: NORA_PORT
+              value: "4000"
+            - name: NORA_REGISTRIES_ENABLE
+              value: docker,maven,npm   # 只启用这三种仓库
+            - name: NORA_CURATION_MODE
+              value: "off"   # 不审查上游包；1.5.0 起代理仓库必须显式设置该项
+            - name: NORA_AUTH_HTPASSWD_FILE
+              value: /etc/nora/auth/users.htpasswd   # 开启鉴权时才读取，来自 Secret nora-htpasswd
+            # 以下取自 Secret yudao-env（.env），缺省时使用 NORA 内置默认值
+            - name: NORA_PUBLIC_URL
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_PUBLIC_URL, optional: true }
+            - name: NORA_MAVEN_PROXIES
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_MAVEN_PROXIES, optional: true }
+            - name: NORA_NPM_PROXY
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_NPM_PROXY, optional: true }
+            - name: NORA_DOCKER_PROXIES
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_DOCKER_PROXIES, optional: true }
+            - name: NORA_AUTH_ENABLED
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_AUTH_ENABLED, optional: true }
+            - name: NORA_AUTH_ANONYMOUS_READ
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_AUTH_ANONYMOUS_READ, optional: true }
+            - name: NORA_AUTH_DOCKER_ANON_PULL
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_AUTH_DOCKER_ANON_PULL, optional: true }
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: auth
+              mountPath: /etc/nora/auth
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nora-data
+        - name: auth
+          secret:
+            secretName: nora-htpasswd   # 由脚本从 nora/auth/users.htpasswd 生成，文件不存在时为空目录
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nora
+  namespace: yudao
+spec:
+  selector:
+    app: nora
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000

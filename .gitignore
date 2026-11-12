@@ -38,6 +38,10 @@ sentinel/logs/
 # ===== XXL-Job：忽略日志 =====
 xxl-job/logs/
 
+# ===== NORA：htpasswd 含账号口令，不提交，只保留目录 =====
+nora/auth/*
+!nora/auth/.gitkeep
+
 # ===== Jenkins：整个 jenkins_home 都是运行时数据 =====
 jenkins/jenkins_home/
 
