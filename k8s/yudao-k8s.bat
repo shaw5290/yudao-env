@@ -3,7 +3,7 @@ REM ============ 编码：二选一 ============
 chcp 936 >nul
 REM chcp 65001 >nul
 REM ================= yudao 本地依赖环境：多服务菜单（Kubernetes）=================
-REM 核心 / 全部中间件按方案 k8s\schemes\core、middleware 部署；单个中间件的启停调用 k8s\services\{名称}.bat
+REM 核心 / 全部中间件按方案 k8s\schemes\core、middleware 部署；单个服务生成临时方案部署（见 :svc_up）
 
 setlocal enabledelayedexpansion
 REM 以仓库根目录为工作目录（.env、backups 都在根目录）
@@ -14,7 +14,6 @@ set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemR
 set NAMESPACE=yudao
 set ENV_FILE=.env
 set SCHEMES_DIR=k8s\schemes
-set SVC_DIR=k8s\services
 REM 所有 kubectl 调用都显式指定上下文，避免误操作当前默认上下文指向的其他集群；用其他集群时先 set K8S_CONTEXT=xxx
 if not defined K8S_CONTEXT set K8S_CONTEXT=docker-desktop
 set "KC=kubectl --context %K8S_CONTEXT%"
@@ -23,7 +22,73 @@ set NORA_HTPASSWD=config\nora\auth\users.htpasswd
 REM 核心 / 中间件 Deployment（与同名 Service 一起启停；新增服务时同步这两行和下面的菜单编号）
 set CORE_DEPLOYMENTS=mysql redis nacos tdengine nginx
 set MIDDLEWARE_DEPLOYMENTS=jenkins minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard postgres lgtm elasticsearch logstash kibana rabbitmq nora
-REM 菜单编号 → 单服务脚本 %SVC_DIR%\{名称}.bat（启动 n，停止 n+10）
+REM ---- 服务元数据（新增服务时加一组，并在菜单和编号表中加一行）----
+REM TITLE_名称=显示名；DEPLOYS_名称=Deployment（与同名 Service 一起启停）；DEPS_名称=一起部署的依赖服务；INFO_名称=启动后提示
+set "TITLE_mysql=MySQL"
+set "DEPLOYS_mysql=mysql"
+set "DEPS_mysql="
+set "INFO_mysql=MySQL：127.0.0.1:3306，root / .env 的 MYSQL_ROOT_PASSWORD"
+set "TITLE_redis=Redis"
+set "DEPLOYS_redis=redis"
+set "DEPS_redis="
+set "INFO_redis=Redis：127.0.0.1:6379，密码为 .env 的 REDIS_PASSWORD"
+set "TITLE_nginx=Nginx"
+set "DEPLOYS_nginx=nginx"
+set "DEPS_nginx="
+set "INFO_nginx=Nginx：http://127.0.0.1:80"
+set "TITLE_nacos=Nacos"
+set "DEPLOYS_nacos=nacos"
+set "DEPS_nacos=mysql"
+set "INFO_nacos=Nacos 控制台：http://127.0.0.1:8080，客户端地址：127.0.0.1:8848"
+set "TITLE_tdengine=TDengine"
+set "DEPLOYS_tdengine=tdengine"
+set "DEPS_tdengine="
+set "INFO_tdengine=TDengine REST/WebSocket：127.0.0.1:6041，首次使用需建库，见 config/tdengine/init-tdengine-db.md"
+set "TITLE_jenkins=Jenkins"
+set "DEPLOYS_jenkins=jenkins"
+set "DEPS_jenkins="
+set "INFO_jenkins=Jenkins：http://127.0.0.1:8089"
+set "TITLE_postgres=PostgreSQL"
+set "DEPLOYS_postgres=postgres"
+set "DEPS_postgres="
+set "INFO_postgres=PostgreSQL：127.0.0.1:5432，账号见 .env 的 POSTGRES_USER / POSTGRES_PASSWORD"
+set "TITLE_minio=MinIO"
+set "DEPLOYS_minio=minio"
+set "DEPS_minio="
+set "INFO_minio=MinIO 控制台：http://127.0.0.1:9001，API：http://127.0.0.1:9000"
+set "TITLE_rocketmq=RocketMQ（namesrv + broker）"
+set "DEPLOYS_rocketmq=rocketmq-namesrv rocketmq-broker"
+set "DEPS_rocketmq="
+set "INFO_rocketmq=NameServer：127.0.0.1:9876，broker 需要先准备 config/rocketmq/broker/conf/broker.conf"
+set "TITLE_rabbitmq=RabbitMQ"
+set "DEPLOYS_rabbitmq=rabbitmq"
+set "DEPS_rabbitmq="
+set "INFO_rabbitmq=管理控制台：http://127.0.0.1:15672（账号为 .env 的 RABBITMQ_USERNAME / RABBITMQ_PASSWORD），AMQP 地址：127.0.0.1:5672"
+set "TITLE_nora=NORA 制品仓库"
+set "DEPLOYS_nora=nora"
+set "DEPS_nora="
+set "INFO_nora=Web UI：http://127.0.0.1:4000/ui/，镜像仓库：localhost:4000，Maven：http://127.0.0.1:4000/maven2/，npm：http://127.0.0.1:4000/npm/"
+set "TITLE_xxl-job=XXL-Job"
+set "DEPLOYS_xxl-job=xxl-job-admin"
+set "DEPS_xxl-job=mysql"
+set "INFO_xxl-job=调度中心：http://127.0.0.1:9090/xxl-job-admin"
+set "TITLE_seata=Seata Server"
+set "DEPLOYS_seata=seata-server"
+set "DEPS_seata=mysql nacos"
+set "INFO_seata=Seata TC：127.0.0.1:8091，注册到 Nacos 的 SEATA_GROUP"
+set "TITLE_sentinel=Sentinel Dashboard"
+set "DEPLOYS_sentinel=sentinel-dashboard"
+set "DEPS_sentinel="
+set "INFO_sentinel=Sentinel 控制台：http://127.0.0.1:8858"
+set "TITLE_lgtm=Grafana LGTM"
+set "DEPLOYS_lgtm=lgtm"
+set "DEPS_lgtm="
+set "INFO_lgtm=Grafana 控制台：http://127.0.0.1:3000（admin / admin），OTLP HTTP 上报地址：http://127.0.0.1:4318"
+set "TITLE_elk=ELK（Elasticsearch + Logstash + Kibana）"
+set "DEPLOYS_elk=elasticsearch logstash kibana"
+set "DEPS_elk="
+set "INFO_elk=Kibana 控制台：http://127.0.0.1:5601，应用上报地址（Logstash）：127.0.0.1:5044，首次启动需要 1~2 分钟"
+REM ---- 菜单编号 → 服务（启动 n，停止 n+10）----
 set "START_11=minio"
 set "STOP_21=minio"
 set "START_12=rocketmq"
@@ -136,22 +201,22 @@ echo [提示] 无效选项，请重新输入。
 timeout /t 1 >nul
 goto :menu
 
-REM ================= 方案部署：namespace → Secret → kustomize 渲染 → apply =================
+REM ================= 方案部署：namespace → Secret → kustomize 渲染 → apply（用法：call :apply_dir 方案目录）=================
 REM 方案引用了目录外的 services\*.yaml，必须加 --load-restrictor LoadRestrictionsNone，所以不用 apply -k
-:apply_scheme
+:apply_dir
 %KC% apply -f k8s\base\namespace.yaml
 %KC% create secret generic yudao-env --from-env-file=%ENV_FILE% -n %NAMESPACE% --dry-run=client -o yaml | %KC% apply -f -
 if exist "%NORA_HTPASSWD%" (
     %KC% create secret generic nora-htpasswd --from-file=users.htpasswd=%NORA_HTPASSWD% -n %NAMESPACE% --dry-run=client -o yaml | %KC% apply -f -
 )
-%KC% kustomize --load-restrictor LoadRestrictionsNone %SCHEMES_DIR%\%~1 | %KC% apply -f -
+%KC% kustomize --load-restrictor LoadRestrictionsNone %~1 | %KC% apply -f -
 exit /b
 
 REM ================= 核心 =================
 :start
 echo.
 echo [信息] 正在启动核心服务...
-call :apply_scheme core
+call :apply_dir %SCHEMES_DIR%\core
 %KC% get pods -n %NAMESPACE%
 echo.
 pause
@@ -216,7 +281,7 @@ goto :menu
 :rebuild
 echo.
 echo [信息] 重新下发核心方案并强制重启...
-call :apply_scheme core
+call :apply_dir %SCHEMES_DIR%\core
 %KC% rollout restart deployment/mysql deployment/redis deployment/nacos deployment/tdengine deployment/nginx -n %NAMESPACE%
 %KC% get pods -n %NAMESPACE%
 echo.
@@ -226,8 +291,8 @@ goto :menu
 :start_with_postgres
 echo.
 echo [信息] 正在启动核心服务 + PostgreSQL...
-call :apply_scheme core
-call "%SVC_DIR%\postgres.bat" up
+call :apply_dir %SCHEMES_DIR%\core
+call :svc_up postgres
 %KC% get pods -n %NAMESPACE%
 echo.
 pause
@@ -237,7 +302,7 @@ REM ================= 全部中间件 =================
 :profile_all_up
 echo.
 echo [信息] 正在启动所有中间件...
-call :apply_scheme middleware
+call :apply_dir %SCHEMES_DIR%\middleware
 %KC% get pods -n %NAMESPACE%
 echo.
 pause
@@ -254,18 +319,50 @@ echo [完成] 中间件已全部停止。
 pause
 goto :menu
 
-REM ================= 单服务启停：调用 services\{名称}.bat =================
+REM ================= 单服务启停 =================
 :svc_start
-call "%SVC_DIR%\!START_%choice%!.bat" up
+call :svc_up !START_%choice%!
 echo.
 pause
 goto :menu
 
 :svc_stop
-call "%SVC_DIR%\!STOP_%choice%!.bat" down
+call :svc_down !STOP_%choice%!
 echo.
 pause
 goto :menu
+
+REM 用法：call :svc_up 名称
+REM 生成单服务临时方案 k8s\.render\名称\kustomization.yaml（DEPS_名称 + 本服务 + base），与方案部署走同一流程
+REM 临时方案中只写 ASCII：bat 以 GBK 输出，kustomize 按 UTF-8 解析，中文会导致 invalid UTF-8 报错
+:svc_up
+set "S=%~1"
+set "RENDER=k8s\.render\%S%"
+if not exist "%RENDER%" mkdir "%RENDER%"
+(
+    echo # generated by k8s\yudao-k8s.bat, do not edit or commit
+    echo apiVersion: kustomize.config.k8s.io/v1beta1
+    echo kind: Kustomization
+    echo resources:
+    for %%d in (!DEPS_%S%!) do echo   - ../../services/%%d.yaml
+    echo   - ../../services/%S%.yaml
+    echo components:
+    echo   - ../../base
+) > "%RENDER%\kustomization.yaml"
+if not "!DEPS_%S%!"=="" echo [信息] 一起部署依赖：!DEPS_%S%!
+echo [信息] 部署 !TITLE_%S%!...
+call :apply_dir %RENDER%
+if defined INFO_%S% echo [信息] !INFO_%S%!
+exit /b
+
+REM 用法：call :svc_down 名称（只删 Deployment / Service，保留 PVC 数据卷）
+:svc_down
+set "S=%~1"
+echo [信息] 停止 !TITLE_%S%!（保留数据卷）...
+set "TARGETS="
+for %%d in (!DEPLOYS_%S%!) do set "TARGETS=!TARGETS! deployment/%%d service/%%d"
+%KC% delete!TARGETS! -n %NAMESPACE% --ignore-not-found
+exit /b
 
 REM ================= 数据库备份 =================
 :db_backup

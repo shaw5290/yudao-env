@@ -1,8 +1,8 @@
 # ==================== elk（每个服务一个文件）====================
-# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 elk.bat / elk.sh
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用 k8s\yudao-k8s.bat 菜单（生成单服务临时方案）
 # 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
 # ELK：Elasticsearch（存储）+ Logstash（采集）+ Kibana（查询），日志聚合，仅用于开发测试；已关闭安全认证
-# Logstash 的 pipeline 使用 ConfigMap 内联，内容与 elk/logstash/pipeline/logstash.conf 保持一致
+# Logstash 的 pipeline 使用 ConfigMap 内联，内容与 config/elk/logstash/pipeline/logstash.conf 保持一致
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

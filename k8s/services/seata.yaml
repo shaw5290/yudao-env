@@ -1,5 +1,5 @@
 # ==================== seata（每个服务一个文件）====================
-# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 seata.bat / seata.sh
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用 k8s\yudao-k8s.bat 菜单（生成单服务临时方案）
 # 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
 apiVersion: apps/v1
 kind: Deployment
@@ -31,7 +31,7 @@ spec:
           env:
             - name: SEATA_PORT
               value: "8091"
-            # 注册中心 / 存储配置见 seata/resources/application.yml，Nacos、MySQL 地址为 k8s Service 名（nacos、mysql）
+            # 注册中心 / 存储配置见 config/seata/resources/application.yml，Nacos、MySQL 地址为 k8s Service 名（nacos、mysql）
           volumeMounts:
             - name: config
               mountPath: /seata-server/resources/application.yml

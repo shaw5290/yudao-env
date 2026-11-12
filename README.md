@@ -5,32 +5,61 @@
 ## 目录结构
 
 ```
-env/
-├── docker-compose-yudao.yaml   # 主编排文件
-├── toggle-yudao.bat            # Windows 管理脚本（启停/日志/备份还原）
-├── .env.temp                   # 环境变量模板（提交到 git）
+yudao-env/
+├── .env.temp                   # 环境变量模板（提交到 git），compose 与 k8s 共用
 ├── .env                        # 实际使用的环境变量（不提交，自己复制生成）
-├── mysql/
-│   ├── initdb/                 # 首次启动自动执行的建库建表脚本
-│   └── conf/                   # MySQL 自定义配置（可选）
-├── postgres/
-│   └── initdb/                 # PostgreSQL 首次启动自动执行的建库建表脚本
-├── rocketmq/broker/conf/       # RocketMQ broker.conf
-├── seata/resources/            # Seata Server 配置（application.yml）
-├── elk/logstash/pipeline/      # Logstash pipeline（tcp json_lines → Elasticsearch）
-├── nora/auth/                  # NORA 开启鉴权时的 users.htpasswd（不提交）
+├── compose/                    # Docker Compose 部署
+│   ├── yudao.bat               # 管理菜单（启停 / 日志 / 中间件 / 备份还原）
+│   ├── base.yaml               # 公共基础配置（restart、TZ），各服务 extends 引用
+│   ├── services/               # 每个服务一个文件：mysql.yaml、nora.yaml、lgtm.yaml ...
+│   └── schemes/                # 方案：用 include 组合服务文件（all.yaml 全部、core.yaml、middleware.yaml）
+├── k8s/                        # Kubernetes 部署（Docker Desktop 单节点）
+│   ├── yudao-k8s.bat           # 管理菜单，编号与 compose 版一致
+│   ├── base/                   # 公共基础配置：Kustomize Component（namespace、公共标签）+ namespace.yaml
+│   ├── services/               # 每个服务一个文件：mysql.yaml、nora.yaml、lgtm.yaml ...
+│   └── schemes/                # 方案：core/、middleware/、all/，各自的 kustomization.yaml 引用 services/*.yaml
+├── config/                     # compose 与 k8s 共用的挂载文件
+│   ├── mysql/initdb/           # 首次启动自动执行的建库建表脚本（mysql/conf 为可选的自定义配置）
+│   ├── postgres/initdb/        # PostgreSQL 首次启动自动执行的建库建表脚本
+│   ├── rocketmq/broker/conf/   # RocketMQ broker.conf（不入库，启用前自行创建）
+│   ├── seata/resources/        # Seata Server 配置（application.yml）
+│   ├── elk/logstash/pipeline/  # Logstash pipeline（tcp json_lines → Elasticsearch）
+│   ├── nora/auth/              # NORA 开启鉴权时的 users.htpasswd（不提交）
+│   └── tdengine/               # TDengine 建库说明
+├── infra/                      # 基础环境安装配置，按系统环境分目录
+│   └── ubuntu-24.04/           # docker.md（Docker Engine）、k8s.md（kubeadm 集群 master + node）
 └── backups/                    # 数据库备份输出目录（脚本自动生成）
 ```
+
+## 服务文件与方案
+
+两种部署方式的组织方式相同：**每个服务一个配置文件**（`services/*.yaml`），都引用同一份**基础配置**（`base`），再由**方案**（`schemes/`）挑选服务文件组合起来。
+
+- **Compose**：服务文件通过 `extends: { file: ../base.yaml, service: base }` 继承公共配置，每个文件都声明 `name: yudao`，所以单独使用和在方案中使用时，容器名、网络、卷名（`yudao_<卷>`）都一致。方案文件用 `include` 引用服务文件：
+  ```bash
+  # 在仓库根目录执行
+  docker compose -f compose/schemes/all.yaml --env-file .env up -d                       # 核心（mysql、redis）
+  docker compose -f compose/schemes/all.yaml --env-file .env --profile nora up -d nora   # 某个中间件
+  docker compose -f compose/services/lgtm.yaml --env-file .env --profile lgtm up -d      # 只用一个服务文件
+  ```
+  服务文件在子目录中，Compose 不会自动读取根目录的 `.env`，所以要显式加 `--env-file .env`（菜单已处理）。跨文件的依赖（nacos、xxl-job、seata 依赖 mysql 等）不写 `depends_on`，因为单独使用服务文件时会报找不到服务；由菜单先启动依赖。
+- **K8s**：服务文件不写 `namespace`，由 `k8s/base`（Kustomize Component）统一加上 namespace `yudao` 和公共标签。方案引用了目录外的 `services/*.yaml`，Kustomize 默认不允许，所以必须加 `--load-restrictor LoadRestrictionsNone`，不能直接用 `kubectl apply -k`：
+  ```bash
+  kubectl --context docker-desktop kustomize --load-restrictor LoadRestrictionsNone k8s/schemes/core | kubectl --context docker-desktop apply -f -
+  ```
+  菜单启停单个服务时，会生成临时方案 `k8s/.render/<服务>/kustomization.yaml`（依赖 + 本服务 + base，已在 `.gitignore`），与方案部署走同一套渲染流程。
+- **新增方案**：复制一个现有方案，增删其中引用的服务文件即可（Compose 复制 `compose/schemes/*.yaml`，K8s 复制 `k8s/schemes/<方案>/`）。
+- **新增服务**：在 `compose/services/`、`k8s/services/` 各加一个 `<服务>.yaml`，加入相应方案；再在两个菜单开头的“服务元数据”和“菜单编号”中各加一组。
 
 ## 快速开始
 
 1. 安装 Docker Desktop（Windows 下需开启 WSL2 后端），确认 `docker` 命令能在终端直接用。
-2. （可选）不建 `.env` 也能直接启动：compose 中所有变量都带本地开发缺省值（端口为默认端口；MySQL root、Nacos/Seata 的 MySQL 用户口令与 `toggle-yudao.bat`、`01-create-databases.sql` 一致；Redis 无密码；Nacos 鉴权关闭；`SEATA_IP=127.0.0.1`）。需要自定义时复制环境变量模板并按需修改：
+2. （可选）不建 `.env` 也能直接启动：compose 中所有变量都带本地开发缺省值（端口为默认端口；MySQL root、Nacos/Seata 的 MySQL 用户口令与 `compose\yudao.bat`、`config/mysql/initdb/01-create-databases.sql` 一致；Redis 无密码；Nacos 鉴权关闭；`SEATA_IP=127.0.0.1`）。需要自定义时复制环境变量模板并按需修改：
    ```bash
    copy .env.temp .env
    ```
    必须修改的几项：`MYSQL_ROOT_PASSWORD`、`REDIS_PASSWORD`、`NACOS_DB_PASSWORD`、`NACOS_AUTH_TOKEN`（见下方"Nacos 鉴权"）、`MINIO_ROOT_PASSWORD`、`ROCKETMQ_BROKER_IP`、`RABBITMQ_PASSWORD`（如需启用 RabbitMQ）、`SEATA_IP`、`POSTGRES_PASSWORD`（如需启用 PostgreSQL）。
-3. 双击运行 `toggle-yudao.bat`，选 **1（启动核心）**。首次启动会自动执行 `mysql/initdb` 下的建库脚本。
+3. 双击运行 `compose\yudao.bat`，选 **1（启动核心）**。首次启动会自动执行 `config/mysql/initdb` 下的建库脚本。
 4. 核心服务起来后，按需通过菜单单独启动 Nacos / TDengine / Nginx / Jenkins / MinIO / RocketMQ / RabbitMQ / XXL-Job / Seata / Sentinel / PostgreSQL / NORA。
 
 ## 服务清单
@@ -42,7 +71,7 @@ env/
 | mysql | mysql:8.0.21 | `MYSQL_PORT`→3306 | root / `MYSQL_ROOT_PASSWORD` |
 | redis | redis:7 | `REDIS_PORT`→6379 | 密码见 `REDIS_PASSWORD`，留空则不鉴权 |
 
-### 可选中间件（需要 `--profile <name>`，`toggle-yudao.bat` 菜单已封装）
+### 可选中间件（需要 `--profile <name>`，`compose\yudao.bat` 菜单已封装）
 
 | 服务 | 镜像 | 默认端口 | profile |
 |---|---|---|---|
@@ -61,17 +90,17 @@ env/
 | elasticsearch / logstash / kibana | docker.elastic.co/*:8.19.23 | `ELASTICSEARCH_PORT`(9200) / `LOGSTASH_TCP_PORT`(5044) / `KIBANA_PORT`(5601) | elk |
 | nora | ghcr.io/getnora-io/nora:1.4.4 | `NORA_PORT`(4000，Docker / Maven / npm / Web UI 共用) | nora |
 
-> `postgres` 是 yudao-cloud 切换到 PostgreSQL 时使用的数据库（后端设置 `DB_PRIMARY=postgresql`，默认连接 `127.0.0.1:5432/ruoyi-vue-pro`、`postgres` / `123456`）。首次启动会自动执行 `postgres/initdb` 下的脚本建库 `ruoyi-vue-pro` 并导入表结构，见下方"数据库初始化"。账号密码见 `.env` 里的 `POSTGRES_USER` / `POSTGRES_PASSWORD`，需与后端的 `PG_USERNAME` / `PG_PASSWORD` 一致。
+> `postgres` 是 yudao-cloud 切换到 PostgreSQL 时使用的数据库（后端设置 `DB_PRIMARY=postgresql`，默认连接 `127.0.0.1:5432/ruoyi-vue-pro`、`postgres` / `123456`）。首次启动会自动执行 `config/postgres/initdb` 下的脚本建库 `ruoyi-vue-pro` 并导入表结构，见下方"数据库初始化"。账号密码见 `.env` 里的 `POSTGRES_USER` / `POSTGRES_PASSWORD`，需与后端的 `PG_USERNAME` / `PG_PASSWORD` 一致。
 
 > `lgtm` 是 Grafana 官方的一体化可观测性镜像（OTel Collector + Loki 日志 + Tempo 链路 + Prometheus 指标 + Grafana），仅用于开发测试。yudao-cloud-mini 的服务在启动类上添加 `@EnableTraceLogPushOTEL` 注解时默认上报，未添加时默认不上报（避免没启动 LGTM 时报错）；配置项 `management.tracing.export.enabled` 等优先级更高，可以覆盖注解，上报地址在 `application-local.yaml` 中，默认是 `http://127.0.0.1:4318`（OTLP HTTP）。打开 Grafana `http://127.0.0.1:3000`（默认 `admin` / `admin`）→ Explore：选 Tempo 查链路，点击 span 的 "Logs for this span" 跳到该 traceId 在各服务的日志；选 Loki 查日志（如 `{service_name="system-server"} | trace_id="xxx"`），点击日志中的 `trace_id` 跳回链路。数据保存在 `lgtm-data` 卷。
 
-> `elk` 是日志聚合：Logstash 接收应用日志（`tcp` 输入 + `json_lines`，端口 5044），写入 Elasticsearch（按天建索引 `yudao-logs-YYYY.MM.dd`），在 Kibana 中查询；已关闭安全认证，仅用于开发测试，首次启动需要 1~2 分钟。yudao-cloud-mini 的服务在启动类上添加 `@EnableLogPushLogstash` 注解时默认上报，未添加时默认不上报；配置项 `logstash.enabled` 优先级更高，可以覆盖注解，上报地址为 `logstash.destination`（`application-local.yaml` 中默认 `127.0.0.1:5044`）。打开 Kibana `http://127.0.0.1:5601` → Stack Management → 数据视图，创建 `yudao-logs-*`（时间字段 `@timestamp`），然后在 Discover 中按 `traceId`、`app_name`、`level` 等字段查询。Logstash pipeline 见 `elk/logstash/pipeline/logstash.conf`，数据保存在 `elasticsearch-data` 卷。
+> `elk` 是日志聚合：Logstash 接收应用日志（`tcp` 输入 + `json_lines`，端口 5044），写入 Elasticsearch（按天建索引 `yudao-logs-YYYY.MM.dd`），在 Kibana 中查询；已关闭安全认证，仅用于开发测试，首次启动需要 1~2 分钟。yudao-cloud-mini 的服务在启动类上添加 `@EnableLogPushLogstash` 注解时默认上报，未添加时默认不上报；配置项 `logstash.enabled` 优先级更高，可以覆盖注解，上报地址为 `logstash.destination`（`application-local.yaml` 中默认 `127.0.0.1:5044`）。打开 Kibana `http://127.0.0.1:5601` → Stack Management → 数据视图，创建 `yudao-logs-*`（时间字段 `@timestamp`），然后在 Discover 中按 `traceId`、`app_name`、`level` 等字段查询。Logstash pipeline 见 `config/elk/logstash/pipeline/logstash.conf`，数据保存在 `elasticsearch-data` 卷。
 
 > `rabbitmq` 是 yudao-cloud 的可选消息队列（`spring.rabbitmq.*`）。管理员账号由 `.env` 的 `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 设置，变量名与 yudao-cloud 一致，应用侧直接读取同名环境变量；账号只在 `rabbitmq-data` 卷首次初始化时创建，之后修改 `.env` 不会生效（在管理控制台改密码，或清空数据卷）。容器固定 `hostname: rabbitmq`，因为 RabbitMQ 按节点名 `rabbit@<hostname>` 存放数据，hostname 变化会导致重建后读不到原数据。管理控制台 `http://127.0.0.1:15672`。注意 yudao-cloud 各模块的账号默认值不统一（多数为 `guest`，`yudao-server` 为 `rabbit`），连接时以应用侧的 `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 环境变量为准。
 
 ## 数据库初始化
 
-`mysql/initdb/` 下的 SQL 脚本**只在 MySQL 数据卷第一次初始化（空卷）时自动执行**，重启容器不会重跑。会创建以下数据库：
+`config/mysql/initdb/` 下的 SQL 脚本**只在 MySQL 数据卷第一次初始化（空卷）时自动执行**，重启容器不会重跑。会创建以下数据库：
 
 | 库名 | 用途 |
 |---|---|
@@ -81,11 +110,11 @@ env/
 | `seata` | Seata 事务协调器 |
 | `quartz` | 历史遗留，当前没有模块使用，可忽略 |
 
-如果需要重新初始化（改过建库脚本、或想清空数据重来），用 `toggle-yudao.bat` 选项 **9（停止全部并清空数据卷）**，注意这会删除所有服务的数据卷，操作前请先用选项 31 备份数据库。
+如果需要重新初始化（改过建库脚本、或想清空数据重来），用 `compose\yudao.bat` 选项 **9（停止全部并清空数据卷）**，注意这会删除所有服务的数据卷，操作前请先用选项 31 备份数据库。
 
 ### PostgreSQL
 
-`postgres/initdb/` 下的脚本同样**只在 `postgres-data` 卷第一次初始化时执行**，按文件名顺序：
+`config/postgres/initdb/` 下的脚本同样**只在 `postgres-data` 卷第一次初始化时执行**，按文件名顺序：
 
 | 脚本 | 内容 |
 |---|---|
@@ -93,12 +122,12 @@ env/
 | `02-yudao-schema.sql` | `\connect "ruoyi-vue-pro"` + yudao-cloud 业务主库（来自 `yudao-cloud/sql/postgresql/ruoyi-vue-pro.sql`） |
 | `03-yudao-quartz.sql` | `\connect "ruoyi-vue-pro"` + Quartz 表（来自 `yudao-cloud/sql/postgresql/quartz.sql`） |
 
-需要重新初始化时（会丢失 PostgreSQL 数据）：`docker compose -f docker-compose-yudao.yaml --profile postgres rm -sf postgres` 删除容器，`docker volume rm yudao_postgres-data` 删除数据卷，再通过菜单 `17` 启动。
+需要重新初始化时（会丢失 PostgreSQL 数据）：`docker compose -f compose/schemes/all.yaml --env-file .env --profile postgres rm -sf postgres` 删除容器，`docker volume rm yudao_postgres-data` 删除数据卷，再通过菜单 `17` 启动。
 
 ## Nacos
 
 - 应用连接地址：`127.0.0.1:${NACOS_PORT}`（默认 8848），控制台：`http://127.0.0.1:${NACOS_CONSOLE_PORT}`（默认 8080，与 IDEA 内嵌 Nacos 相同；两者二选一启动）。
-- 已预置 `dev` / `test` / `prod` 三个命名空间（`mysql/initdb/02-nacos-schema.sql` 里插入的 `tenant_info` 记录），对应各服务 `application-{profile}.yaml` 里的 `spring.cloud.nacos.*.namespace` 配置，开箱即用。
+- 已预置 `dev` / `test` / `prod` 三个命名空间（`config/mysql/initdb/02-nacos-schema.sql` 里插入的 `tenant_info` 记录），对应各服务 `application-{profile}.yaml` 里的 `spring.cloud.nacos.*.namespace` 配置，开箱即用。
 - **鉴权变量必须都填，不能留空**：`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE` 这三个哪怕不启用鉴权（`NACOS_AUTH_ENABLE` 可以注释/关闭）也必须有值，否则镜像启动脚本会直接 `exit 255`。`NACOS_AUTH_TOKEN` 需要 Base64 编码的 32 字节字符串，生成命令：
   ```bash
   openssl rand -base64 32
@@ -149,13 +178,13 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 **鉴权**（默认关闭，任何人都能读写，只适合本机开发）：
 1. 生成 bcrypt 格式的 htpasswd（在 cmd 中执行；PowerShell 的 `>` 会写成 UTF-16，不能用）：
    ```bat
-   docker run --rm httpd:2.4-alpine htpasswd -nbB admin <密码> > nora\auth\users.htpasswd
+   docker run --rm httpd:2.4-alpine htpasswd -nbB admin <密码> > config\nora\auth\users.htpasswd
    ```
    添加更多用户时，把命令输出追加到同一个文件。该文件已在 `.gitignore` 中，不会提交。
 2. `.env` 中设置 `NORA_AUTH_ENABLED=true`，然后重新启动 NORA（菜单 `43`）。
 3. 开启后上传 / 推送必须带账号（`docker login localhost:4000`，Maven 在 `<servers>` 中配置账号）；`NORA_AUTH_ANONYMOUS_READ`、`NORA_AUTH_DOCKER_ANON_PULL` 默认为 `true`，即 Maven / npm 下载和镜像拉取仍可匿名，K8s 节点拉镜像不用配 `imagePullSecrets`。CI 中建议在 Web UI 创建 API Token（`nra_` 开头）代替密码。
 
-## toggle-yudao.bat 菜单说明
+## compose\yudao.bat 菜单说明
 
 双击运行后是一个交互式菜单，输入编号回车执行：
 
@@ -172,7 +201,7 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 单独停止中间件时，有命名数据卷的服务会询问“是否同时删除容器和数据卷”，**默认 N**（直接回车）只停止、保留数据；输入 `y` 会删除该中间件的容器及其数据卷（如 MinIO 的 `yudao_minio-data`），数据不可恢复。Seata、Nginx 没有命名卷，直接停止不询问。
 
 **危险操作**
-- `9` 停止全部并**清空所有数据卷**（`down -v`），需要手动输入 `DELETE` 二次确认。用于彻底重置环境、让 `mysql/initdb` 脚本重新执行。
+- `9` 停止全部并**清空所有数据卷**（`down -v`），需要手动输入 `DELETE` 二次确认。用于彻底重置环境、让 `config/mysql/initdb` 脚本重新执行。
 
 **数据库备份 / 还原**（依赖本机能直接执行 `docker exec`）
 - `31` 备份所有非系统库到 `backups/mysql_<时间戳>.sql`
@@ -182,25 +211,26 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 
 ## Kubernetes 版本
 
-除了 `docker-compose-yudao.yaml`，`k8s/` 目录下提供了一套等价的 Kubernetes 清单 + `toggle-yudao-k8s.bat` 管理脚本，用法跟上面的 compose 版本基本一一对应。**目标环境是 Docker Desktop 自带的单节点 Kubernetes**（设置 → Kubernetes → Enable Kubernetes），其他集群（minikube/真实多节点集群）需要自行调整存储和网络部分。
+除了 `compose/`，`k8s/` 目录下提供了一套等价的 Kubernetes 清单 + `k8s\yudao-k8s.bat` 管理菜单，用法跟上面的 compose 版本基本一一对应。**目标环境是 Docker Desktop 自带的单节点 Kubernetes**（设置 → Kubernetes → Enable Kubernetes），其他集群（minikube/真实多节点集群）需要自行调整存储和网络部分。
 
 ### 快速开始
 
 1. Docker Desktop 里启用 Kubernetes，等状态栏图标变绿。
 2. 确保 `.env` 已经存在（跟 compose 版本共用同一份 `.env`，见上文"快速开始"）。
-3. 双击运行 `toggle-yudao-k8s.bat`，选 **1（启动核心）**。脚本会自动创建 `yudao` 这个 Namespace，并从 `.env` 生成/更新一个叫 `yudao-env` 的 Secret，再 apply 核心服务清单。
+3. 双击运行 `k8s\yudao-k8s.bat`，选 **1（启动核心）**。脚本会自动创建 `yudao` 这个 Namespace，并从 `.env` 生成/更新一个叫 `yudao-env` 的 Secret，再部署方案 `k8s/schemes/core`。
+4. **kubectl 上下文**：脚本中所有 kubectl 命令都显式加 `--context docker-desktop`，不使用当前默认上下文，上下文不存在时直接报错退出，避免误部署到其他集群。确实要用其他集群时，先在 cmd 中 `set K8S_CONTEXT=<上下文名>` 再运行。
 
 ### 跟 compose 版本的关键差异
 
-- **端口是写死的字面量**：K8s 的 `hostPort` 字段不支持变量替换，所以 `k8s/*.yaml` 里的端口直接写成了 `.env.temp` 的默认值（3306/6379/8848/9000 等），每个端口旁边都有注释标注对应 `.env` 里的哪个变量。如果本机端口冲突，需要直接改 YAML 文件里的数字，改完 `.env` 里对应的变量仅供人工核对，不会被自动同步进 YAML。
+- **端口是写死的字面量**：K8s 的 `hostPort` 字段不支持变量替换，所以 `k8s/services/*.yaml` 里的端口直接写成了 `.env.temp` 的默认值（3306/6379/8848/9000 等），每个端口旁边都有注释标注对应 `.env` 里的哪个变量。如果本机端口冲突，需要直接改 YAML 文件里的数字，改完 `.env` 里对应的变量仅供人工核对，不会被自动同步进 YAML。
 - **没有 `PROJECT_NAME` 前缀**：compose 版本用前缀区分同一台机器上的多套环境，K8s 版本用 `yudao` 这个 Namespace 天然隔离，资源名就是 `mysql`、`nacos` 这种简单名字，不支持多环境并存（要多套就开多个 Namespace，需要自行改清单）。
-- **数据卷**：对应 compose 里的 named volume（`mysql-data`、`nacos-data`、`minio-data` 等）都改成了 `PersistentVolumeClaim`，走 Docker Desktop 默认 StorageClass 动态供给；`mysql/initdb`、`mysql/conf`、`rocketmq/broker/conf`、`seata/resources` 这几个需要挂载仓库真实文件的，用 `hostPath` 挂载 `/run/desktop/mnt/host/d/sourceCode/yudao/env/...`（Docker Desktop for Windows 固定的宿主机路径映射规则，盘符小写）。**如果这个仓库不是放在 `D:\sourceCode\yudao\env`，需要手动把 `k8s/*.yaml` 里所有 `hostPath.path` 改成实际路径对应的映射。**
-- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用文件级选择——`10-jenkins.yaml` ~ `20-nora.yaml` 十一个文件默认不 apply，`toggle-yudao-k8s.bat` 的中间件菜单项分别对应 `kubectl apply -f` / `kubectl delete deployment,service`（停止时特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
-- **NORA 鉴权**：`20-nora.yaml` 从 Secret `yudao-env` 读取 `NORA_*` 变量，从 Secret `nora-htpasswd` 挂载 htpasswd。菜单 `43` / `7` 启动前，如果 `nora\auth\users.htpasswd` 存在，会自动把它同步为 `nora-htpasswd`。节点拉取 NORA 中的镜像时用 `localhost:4000/...`（`hostPort` 4000）。
+- **数据卷**：对应 compose 里的 named volume（`mysql-data`、`nacos-data`、`minio-data` 等）都改成了 `PersistentVolumeClaim`，走 Docker Desktop 默认 StorageClass 动态供给；`config/` 下 `mysql/initdb`、`mysql/conf`、`postgres/initdb`、`rocketmq/broker/conf`、`seata/resources` 这几个需要挂载仓库真实文件的，用 `hostPath` 挂载 `/run/desktop/mnt/host/d/workspace/yudao/yudao-env/config/...`（Docker Desktop for Windows 固定的宿主机路径映射规则，盘符小写）。**如果这个仓库不是放在 `D:\workspace\yudao\yudao-env`，需要手动把 `k8s/services/*.yaml` 里所有 `hostPath.path` 改成实际路径对应的映射。**
+- **中间件的"可选启动"**：compose 用 `--profile`，K8s 版本用方案选择——核心方案 `k8s/schemes/core` 包含 mysql、redis、nacos、tdengine、nginx，其余服务默认不部署；菜单中单个中间件的启动生成单服务临时方案部署，停止对应 `kubectl delete deployment,service`（特意只删 Deployment/Service，不碰 PVC，避免误删数据）。
+- **NORA 鉴权**：`k8s/services/nora.yaml` 从 Secret `yudao-env` 读取 `NORA_*` 变量，从 Secret `nora-htpasswd` 挂载 htpasswd。菜单 `43` / `7` 启动前，如果 `config\nora\auth\users.htpasswd` 存在，会自动把它同步为 `nora-htpasswd`。节点拉取 NORA 中的镜像时用 `localhost:4000/...`（`hostPort` 4000）。
 
-### toggle-yudao-k8s.bat 菜单说明
+### k8s\yudao-k8s.bat 菜单说明
 
-菜单编号跟 `toggle-yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52`、`43`/`53` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+菜单编号跟 `compose\yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52`、`43`/`53` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
 - `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
 - `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
 
@@ -211,4 +241,4 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 - **`chcp`/`where`/`docker` 报"不是内部或外部命令"**：Windows 系统 PATH 缺了 `C:\Windows\System32`。脚本已经在开头临时把 `%SystemRoot%\System32` 等目录加回本进程 PATH，一般不用管；如果还报错，说明系统级 PATH 环境变量本身被破坏了，需要在"编辑系统环境变量"里手动修复。
 - **IDEA 报 `Command line is too long`**：多模块项目 classpath 太长超过 Windows 命令行限制，跟本仓库无关。在 Run/Debug Configuration 里勾选 `Modify options → Shorten command line`，选 `JAR manifest` 或 `@argfiles`。
 - **多个服务启动报 `Port XXXX was already in use`**：先确认不是同一个端口被两个 yudao-cloud 模块同时占用（各模块端口在各自 `application.yaml` 里写死，检查有没有重复），再排查是否有上一次运行残留的进程没退出（`netstat -ano | findstr <端口>` 找 PID，`taskkill /PID <pid> /F` 杀掉）。
-- **应用连的数据库名对不上**：这个仓库的主库名是 `ruoyi-vue-pro`（在 `mysql/initdb/01-create-databases.sql` 里定义），确认应用的 `application-local.yaml` 数据源 URL 里的库名跟这个一致。
+- **应用连的数据库名对不上**：这个仓库的主库名是 `ruoyi-vue-pro`（在 `config/mysql/initdb/01-create-databases.sql` 里定义），确认应用的 `application-local.yaml` 数据源 URL 里的库名跟这个一致。

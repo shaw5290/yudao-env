@@ -1,5 +1,5 @@
 # ==================== rocketmq（每个服务一个文件）====================
-# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 rocketmq.bat / rocketmq.sh
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用 k8s\yudao-k8s.bat 菜单（生成单服务临时方案）
 # 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -7,52 +7,38 @@ logs/
 data/
 *.log
 
-# ===== MySQL：忽略数据/日志，保留 conf、initdb =====
-mysql/**
-!mysql/conf/
-!mysql/conf/**
-!mysql/initdb/
-!mysql/initdb/**
+# ===== config/：compose 与 k8s 共用的挂载文件，只提交配置/初始化脚本 =====
+# MySQL：保留 conf、initdb
+config/mysql/**
+!config/mysql/conf/
+!config/mysql/conf/**
+!config/mysql/initdb/
+!config/mysql/initdb/**
+# RocketMQ：保留 broker.conf（目前不入库，启用 rocketmq 前自行创建）
+config/rocketmq/namesrv/logs/
+config/rocketmq/broker/logs/
+config/rocketmq/broker/store/
+# Seata：忽略日志，保留 resources
+config/seata/logs/
+# NORA：htpasswd 含账号口令，不提交，只保留目录
+config/nora/auth/*
+!config/nora/auth/.gitkeep
 
-# ===== Nacos：忽略数据/日志/插件，保留 conf =====
-nacos/**
-!nacos/conf/
-!nacos/conf/**
-
-# ===== MinIO：忽略数据 =====
-minio/data/
-
-# ===== RocketMQ：忽略日志/存储，保留 broker.conf =====
-rocketmq/namesrv/logs/
-rocketmq/broker/logs/
-rocketmq/broker/store/
-# 保留：rocketmq/broker/conf/
-
-# ===== Seata：忽略日志，保留 resources =====
-seata/logs/
-# 保留：seata/resources/
-
-# ===== Sentinel：忽略日志 =====
-sentinel/logs/
-
-# ===== XXL-Job：忽略日志 =====
-xxl-job/logs/
-
-# ===== NORA：htpasswd 含账号口令，不提交，只保留目录 =====
-nora/auth/*
-!nora/auth/.gitkeep
+# ===== k8s：单服务部署时脚本生成的临时方案 =====
+k8s/.render/
 
 # ===== Jenkins：整个 jenkins_home 都是运行时数据 =====
 jenkins/jenkins_home/
 
 # ===== Docker Compose 本地覆盖/环境变量 =====
 docker-compose.override.yml
+compose/**/docker-compose.override.yml
 .env
 .env.local
 
 # ===== 批处理脚本（本机用，按需放开）=====
-# toggle-yudao.bat
-# menu-yudao.bat
+# compose/yudao.bat
+# k8s/yudao-k8s.bat
 
 # ===== IDE / 编辑器 =====
 .idea/

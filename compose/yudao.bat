@@ -3,7 +3,7 @@ REM ============ ±àÂë£º¶þÑ¡Ò» ============
 chcp 936 >nul
 REM chcp 65001 >nul
 REM ================= yudao ±¾µØÒÀÀµ»·¾³£º¶à·þÎñ²Ëµ¥£¨Docker Compose£©=================
-REM ¶à·þÎñ²Ù×÷Ê¹ÓÃ·½°¸ compose\schemes\all.yaml£»µ¥¸öÖÐ¼ä¼þµÄÆôÍ£µ÷ÓÃ compose\services\{Ãû³Æ}.bat
+REM Ê¹ÓÃ·½°¸ compose\schemes\all.yaml£¨ÒýÓÃ compose\services\*.yaml£©£»µ¥¸ö·þÎñ°´ profile ÆôÍ£
 
 setlocal enabledelayedexpansion
 REM ÒÔ²Ö¿â¸ùÄ¿Â¼Îª¹¤×÷Ä¿Â¼£¨.env¡¢backups ¶¼ÔÚ¸ùÄ¿Â¼£©
@@ -12,7 +12,6 @@ REM ---- ÐÞ¸´»·¾³ PATH È±Ê§ System32 µ¼ÖÂ chcp/where ²»¿ÉÓÃ£¨½ö±¾½ø³ÌÉúÐ§£¬²»¸ÄÏ
 set "PATH=%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0\;%PATH%"
 
 set SCHEME=compose\schemes\all.yaml
-set SVC_DIR=compose\services
 set "ENV_OPT="
 if exist ".env" set "ENV_OPT=--env-file .env"
 set CMD=docker compose -f %SCHEME% %ENV_OPT%
@@ -21,7 +20,91 @@ set CORE_SERVICES=mysql redis
 REM ËùÓÐÖÐ¼ä¼þ profile / ·þÎñ£¨ÐÂÔö·þÎñÊ±Í¬²½ÕâÁ½ÐÐºÍÏÂÃæµÄ²Ëµ¥±àºÅ£©
 set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora
 set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana rabbitmq nora
-REM ²Ëµ¥±àºÅ ¡ú µ¥·þÎñ½Å±¾ %SVC_DIR%\{Ãû³Æ}.bat£¨Æô¶¯ n£¬Í£Ö¹ n+10£©
+REM Êý¾Ý¾íÃûÇ°×º = compose ÏîÄ¿Ãû£¨name: yudao£©£¬Êµ¼Ê¾íÃûÎª yudao_¾íÃû
+set VOLUME_PREFIX=yudao
+REM ---- ·þÎñÔªÊý¾Ý£¨ÐÂÔö·þÎñÊ±¼ÓÒ»×é£¬²¢ÔÚ²Ëµ¥ºÍ±àºÅ±íÖÐ¼ÓÒ»ÐÐ£©----
+REM TITLE_Ãû³Æ=ÏÔÊ¾Ãû£»SVCS_Ãû³Æ=compose ·þÎñÃû£»VOLS_Ãû³Æ=ÃüÃûÊý¾Ý¾í£¨²»´ø yudao_ Ç°×º£©£»DEPS_Ãû³Æ=ÐèÒªÏÈÆô¶¯µÄ·þÎñ£»INFO_Ãû³Æ=Æô¶¯ºóÌáÊ¾
+set "TITLE_mysql=MySQL"
+set "SVCS_mysql=mysql"
+set "VOLS_mysql=mysql-data mysql-log"
+set "DEPS_mysql="
+set "INFO_mysql=MySQL£º127.0.0.1:3306£¬root / .env µÄ MYSQL_ROOT_PASSWORD"
+set "TITLE_redis=Redis"
+set "SVCS_redis=redis"
+set "VOLS_redis="
+set "DEPS_redis="
+set "INFO_redis=Redis£º127.0.0.1:6379£¬ÃÜÂëÎª .env µÄ REDIS_PASSWORD"
+set "TITLE_nginx=Nginx"
+set "SVCS_nginx=nginx"
+set "VOLS_nginx="
+set "DEPS_nginx="
+set "INFO_nginx=Nginx£ºhttp://127.0.0.1:80"
+set "TITLE_nacos=Nacos"
+set "SVCS_nacos=nacos"
+set "VOLS_nacos=nacos-data nacos-logs nacos-plugins"
+set "DEPS_nacos=mysql"
+set "INFO_nacos=Nacos ¿ØÖÆÌ¨£ºhttp://127.0.0.1:8080£¬¿Í»§¶ËµØÖ·£º127.0.0.1:8848"
+set "TITLE_tdengine=TDengine"
+set "SVCS_tdengine=tdengine"
+set "VOLS_tdengine=tdengine-data tdengine-log"
+set "DEPS_tdengine="
+set "INFO_tdengine=TDengine REST/WebSocket£º127.0.0.1:6041£¬Ê×´ÎÊ¹ÓÃÐè½¨¿â£¬¼û config/tdengine/init-tdengine-db.md"
+set "TITLE_jenkins=Jenkins"
+set "SVCS_jenkins=jenkins"
+set "VOLS_jenkins=jenkins-home"
+set "DEPS_jenkins="
+set "INFO_jenkins=Jenkins£ºhttp://127.0.0.1:8089"
+set "TITLE_postgres=PostgreSQL"
+set "SVCS_postgres=postgres"
+set "VOLS_postgres=postgres-data postgres-log"
+set "DEPS_postgres="
+set "INFO_postgres=PostgreSQL£º127.0.0.1:5432£¬ÕËºÅ¼û .env µÄ POSTGRES_USER / POSTGRES_PASSWORD"
+set "TITLE_minio=MinIO"
+set "SVCS_minio=minio"
+set "VOLS_minio=minio-data"
+set "DEPS_minio="
+set "INFO_minio=MinIO ¿ØÖÆÌ¨£ºhttp://127.0.0.1:9001£¬API£ºhttp://127.0.0.1:9000"
+set "TITLE_rocketmq=RocketMQ£¨namesrv + broker£©"
+set "SVCS_rocketmq=rocketmq-namesrv rocketmq-broker"
+set "VOLS_rocketmq=rocketmq-namesrv-logs rocketmq-broker-logs rocketmq-broker-store"
+set "DEPS_rocketmq="
+set "INFO_rocketmq=NameServer£º127.0.0.1:9876£¬broker ÐèÒªÏÈ×¼±¸ config/rocketmq/broker/conf/broker.conf"
+set "TITLE_rabbitmq=RabbitMQ"
+set "SVCS_rabbitmq=rabbitmq"
+set "VOLS_rabbitmq=rabbitmq-data"
+set "DEPS_rabbitmq="
+set "INFO_rabbitmq=¹ÜÀí¿ØÖÆÌ¨£ºhttp://127.0.0.1:15672£¨ÕËºÅÎª .env µÄ RABBITMQ_USERNAME / RABBITMQ_PASSWORD£©£¬AMQP µØÖ·£º127.0.0.1:5672"
+set "TITLE_nora=NORA ÖÆÆ·²Ö¿â"
+set "SVCS_nora=nora"
+set "VOLS_nora=nora-data"
+set "DEPS_nora="
+set "INFO_nora=Web UI£ºhttp://127.0.0.1:4000/ui/£¬¾µÏñ²Ö¿â£ºlocalhost:4000£¬Maven£ºhttp://127.0.0.1:4000/maven2/£¬npm£ºhttp://127.0.0.1:4000/npm/"
+set "TITLE_xxl-job=XXL-Job"
+set "SVCS_xxl-job=xxl-job-admin"
+set "VOLS_xxl-job=xxl-job-logs"
+set "DEPS_xxl-job=mysql"
+set "INFO_xxl-job=µ÷¶ÈÖÐÐÄ£ºhttp://127.0.0.1:9090/xxl-job-admin"
+set "TITLE_seata=Seata Server"
+set "SVCS_seata=seata-server"
+set "VOLS_seata="
+set "DEPS_seata=mysql nacos"
+set "INFO_seata=Seata TC£º127.0.0.1:8091£¬×¢²áµ½ Nacos µÄ SEATA_GROUP"
+set "TITLE_sentinel=Sentinel Dashboard"
+set "SVCS_sentinel=sentinel-dashboard"
+set "VOLS_sentinel=sentinel-logs"
+set "DEPS_sentinel="
+set "INFO_sentinel=Sentinel ¿ØÖÆÌ¨£ºhttp://127.0.0.1:8858"
+set "TITLE_lgtm=Grafana LGTM"
+set "SVCS_lgtm=lgtm"
+set "VOLS_lgtm=lgtm-data"
+set "DEPS_lgtm="
+set "INFO_lgtm=Grafana ¿ØÖÆÌ¨£ºhttp://127.0.0.1:3000£¨admin / admin£©£¬OTLP HTTP ÉÏ±¨µØÖ·£ºhttp://127.0.0.1:4318"
+set "TITLE_elk=ELK£¨Elasticsearch + Logstash + Kibana£©"
+set "SVCS_elk=elasticsearch logstash kibana"
+set "VOLS_elk=elasticsearch-data"
+set "DEPS_elk="
+set "INFO_elk=Kibana ¿ØÖÆÌ¨£ºhttp://127.0.0.1:5601£¬Ó¦ÓÃÉÏ±¨µØÖ·£¨Logstash£©£º127.0.0.1:5044£¬Ê×´ÎÆô¶¯ÐèÒª 1~2 ·ÖÖÓ"
+REM ---- ²Ëµ¥±àºÅ ¡ú ·þÎñ£¨Æô¶¯ n£¬Í£Ö¹ n+10£©----
 set "START_10=tdengine"
 set "STOP_20=tdengine"
 set "START_11=minio"
@@ -74,7 +157,7 @@ if not exist "%SCHEME%" (
 cls
 echo ========================================
 echo   yudao-cloud Docker ¹ÜÀí²Ëµ¥
-echo   ÅäÖÃ·½°¸: %SCHEME%    µ¥·þÎñ½Å±¾: %SVC_DIR%\{Ãû³Æ}.bat
+echo   ÅäÖÃ·½°¸: %SCHEME%
 echo ========================================
 echo   ºËÐÄ·þÎñ£º
 echo     1. Æô¶¯ºËÐÄ    (mysql/redis)
@@ -231,18 +314,55 @@ echo [Íê³É] ÖÐ¼ä¼þÒÑÈ«²¿Í£Ö¹£¨ºËÐÄ·þÎñ±£³ÖÔËÐÐ£©¡£
 pause
 goto :menu
 
-REM ================= µ¥·þÎñÆôÍ££ºµ÷ÓÃ services\{Ãû³Æ}.bat =================
+REM ================= µ¥·þÎñÆôÍ£ =================
 :svc_start
-call "%SVC_DIR%\!START_%choice%!.bat" up
+call :svc_up !START_%choice%!
 echo.
 pause
 goto :menu
 
 :svc_stop
-call "%SVC_DIR%\!STOP_%choice%!.bat" down
+call :svc_down !STOP_%choice%!
 echo.
 pause
 goto :menu
+
+REM ÓÃ·¨£ºcall :svc_up Ãû³Æ£¨ÏÈÆô¶¯ DEPS_Ãû³Æ ÖÐµÄÒÀÀµ£©
+:svc_up
+set "S=%~1"
+for %%d in (!DEPS_%S%!) do (
+    echo [ÐÅÏ¢] ÏÈÆô¶¯ÒÀÀµ£º!TITLE_%%d!
+    %CMD% --profile %%d up -d !SVCS_%%d!
+)
+echo [ÐÅÏ¢] Æô¶¯ !TITLE_%S%!...
+%CMD% --profile %S% up -d !SVCS_%S%!
+if defined INFO_%S% echo [ÐÅÏ¢] !INFO_%S%!
+exit /b
+
+REM ÓÃ·¨£ºcall :svc_down Ãû³Æ£¨ÓÐÃüÃûÊý¾Ý¾íÊ±Ñ¯ÎÊÊÇ·ñÒ»ÆðÉ¾³ý£¬Ä¬ÈÏ N ±£Áô£©
+:svc_down
+set "S=%~1"
+set "MD_SERVICES=!SVCS_%S%!"
+set "MD_VOLUMES=!VOLS_%S%!"
+echo [ÐÅÏ¢] Í£Ö¹ !TITLE_%S%!...
+if "%MD_VOLUMES%"=="" (
+    %CMD% --profile %S% stop %MD_SERVICES%
+    exit /b
+)
+echo [ÌáÊ¾] Ïà¹ØÊý¾Ý¾í£º%MD_VOLUMES%
+set "rmvol=N"
+set /p rmvol=ÊÇ·ñÍ¬Ê±É¾³ýÈÝÆ÷ºÍÊý¾Ý¾í£¿É¾³ýºóÊý¾Ý²»¿É»Ö¸´ (y/N£¬Ä¬ÈÏ N):
+if /i not "!rmvol!"=="Y" (
+    %CMD% --profile %S% stop %MD_SERVICES%
+    echo [Íê³É] ÒÑÍ£Ö¹£¬Êý¾Ý¾íÒÑ±£Áô¡£
+    exit /b
+)
+%CMD% --profile %S% rm -s -f %MD_SERVICES%
+for %%v in (%MD_VOLUMES%) do (
+    docker volume inspect %VOLUME_PREFIX%_%%v >nul 2>nul && docker volume rm %VOLUME_PREFIX%_%%v
+)
+echo [Íê³É] ÒÑÍ£Ö¹²¢É¾³ýÈÝÆ÷ºÍÊý¾Ý¾í¡£
+exit /b
 
 REM ================= Êý¾Ý¿â±¸·Ý =================
 :db_backup

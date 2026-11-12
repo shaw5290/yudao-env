@@ -1,5 +1,5 @@
 # ==================== nora（每个服务一个文件）====================
-# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 nora.bat / nora.sh
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用 k8s\yudao-k8s.bat 菜单（生成单服务临时方案）
 # 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -91,7 +91,7 @@ spec:
             claimName: nora-data
         - name: auth
           secret:
-            secretName: nora-htpasswd   # 由脚本从 nora/auth/users.htpasswd 生成，文件不存在时为空目录
+            secretName: nora-htpasswd   # 由菜单从 config/nora/auth/users.htpasswd 生成，文件不存在时为空目录
             optional: true
 ---
 apiVersion: v1

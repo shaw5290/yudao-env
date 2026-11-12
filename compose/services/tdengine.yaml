@@ -1,5 +1,5 @@
 # ==================== TDengine（IoT 模块设备时序数据） ====================
-# 单独使用：docker compose -f compose/services/tdengine.yaml --env-file .env --profile tdengine up -d（推荐用同名 .bat / .sh 脚本）
+# 单独使用：docker compose -f compose/services/tdengine.yaml --env-file .env --profile tdengine up -d（推荐用 compose\yudao.bat 菜单）
 # 由 ../schemes/*.yaml 引用组成不同方案
 # 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
 name: yudao

@@ -1,5 +1,5 @@
 # ==================== Seata Server（依赖 mysql、nacos，由脚本先启动） ====================
-# 单独使用：docker compose -f compose/services/seata.yaml --env-file .env --profile seata up -d（推荐用同名 .bat / .sh 脚本）
+# 单独使用：docker compose -f compose/services/seata.yaml --env-file .env --profile seata up -d（推荐用 compose\yudao.bat 菜单）
 # 由 ../schemes/*.yaml 引用组成不同方案
 # 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
 name: yudao
@@ -15,7 +15,7 @@ services:
     environment:
       SEATA_IP: ${SEATA_IP:-127.0.0.1}   # 注册到 Nacos 的地址，宿主机上的服务通过它连接 TC
       SEATA_PORT: 8091
-      SEATA_DB_PASSWORD: ${SEATA_DB_PASSWORD:-123456}   # 与 mysql/initdb/01-create-databases.sql 的 seata 用户一致
+      SEATA_DB_PASSWORD: ${SEATA_DB_PASSWORD:-123456}   # 与 config/mysql/initdb/01-create-databases.sql 的 seata 用户一致
       SEATA_NACOS_USERNAME: ${NACOS_USERNAME:-}   # Nacos 开启鉴权时填写
       SEATA_NACOS_PASSWORD: ${NACOS_PASSWORD:-}
     volumes:
