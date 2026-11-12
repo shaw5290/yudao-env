@@ -35,11 +35,11 @@ spec:
           image: grafana/otel-lgtm:0.37.0
           ports:
             - containerPort: 3000
-              hostPort: 3000   # 对应 .env 的 LGTM_GRAFANA_PORT，冲突时改这里
+              hostPort: 3000   # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 4317
-              hostPort: 4317   # 对应 .env 的 LGTM_OTLP_GRPC_PORT
+              hostPort: 4317   # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 4318
-              hostPort: 4318   # 对应 .env 的 LGTM_OTLP_HTTP_PORT
+              hostPort: 4318   # 宿主机端口，冲突时改这里（不读 .env）
           env:
             - name: TZ
               value: Asia/Shanghai

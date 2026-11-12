@@ -35,12 +35,17 @@ spec:
           args: ["server", "/data", "--console-address", ":9001"]
           ports:
             - containerPort: 9000
-              hostPort: 9000   # 对应 .env 的 MINIO_PORT
+              hostPort: 9000   # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 9001
-              hostPort: 9001   # 对应 .env 的 MINIO_CONSOLE_PORT
-          envFrom:
-            - secretRef:
-                name: yudao-env   # 提供 MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
+              hostPort: 9001   # 宿主机端口，冲突时改这里（不读 .env）
+          env:
+            # 取自 Secret yudao-env，键名与 minio 镜像原生变量一致
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: MINIO_ROOT_USER }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: MINIO_ROOT_PASSWORD }
           volumeMounts:
             - name: data
               mountPath: /data

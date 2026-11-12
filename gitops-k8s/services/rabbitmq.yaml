@@ -35,18 +35,19 @@ spec:
           image: rabbitmq:4.1-management
           ports:
             - containerPort: 5672
-              hostPort: 5672    # 对应 .env 的 RABBITMQ_PORT，冲突时改这里
+              hostPort: 5672    # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 15672
-              hostPort: 15672   # 对应 .env 的 RABBITMQ_MANAGEMENT_PORT，冲突时改这里
+              hostPort: 15672   # 宿主机端口，冲突时改这里（不读 .env）
           env:
             - name: TZ
               value: Asia/Shanghai
+            # 以下取自 Secret yudao-env，键名与 rabbitmq 镜像原生变量一致；必填，只在 rabbitmq-data 首次初始化时生效
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
-                secretKeyRef: { name: yudao-env, key: RABBITMQ_USERNAME, optional: true }
+                secretKeyRef: { name: yudao-env, key: RABBITMQ_DEFAULT_USER }
             - name: RABBITMQ_DEFAULT_PASS
               valueFrom:
-                secretKeyRef: { name: yudao-env, key: RABBITMQ_PASSWORD, optional: true }
+                secretKeyRef: { name: yudao-env, key: RABBITMQ_DEFAULT_PASS }
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "ping"]

@@ -22,8 +22,9 @@ spec:
           image: redis:7
           ports:
             - containerPort: 6379
-              hostPort: 6379   # 对应 .env 的 REDIS_PORT
+              hostPort: 6379   # 宿主机端口，冲突时改这里（不读 .env）
           env:
+            # redis 官方镜像没有密码环境变量，沿用通用名 REDIS_PASSWORD（bitnami 镜像、Spring 配置同名），经 --requirepass 传入
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef: { name: yudao-env, key: REDIS_PASSWORD }

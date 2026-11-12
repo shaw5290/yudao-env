@@ -34,15 +34,19 @@ spec:
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
-              hostPort: 5432   # 对应 .env 的 POSTGRES_PORT
+              hostPort: 5432   # 宿主机端口，冲突时改这里（不读 .env）
           env:
             - name: TZ
               value: Asia/Shanghai
             - name: POSTGRES_DB
-              value: ruoyi-vue-pro   # 首次初始化时直接建业务库（代替 config/postgres/initdb/01），覆盖 Secret 中的 POSTGRES_DB
-          envFrom:
-            - secretRef:
-                name: yudao-env   # 提供 POSTGRES_USER / POSTGRES_PASSWORD
+              value: ruoyi-vue-pro   # 首次初始化时直接建业务库（代替 config/postgres/initdb/01）；库名由表结构脚本决定，不放 .env
+            # 以下取自 Secret yudao-env，键名与 postgres 镜像原生变量一致
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_PASSWORD }
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data

@@ -37,7 +37,7 @@ spec:
           image: ghcr.io/getnora-io/nora:1.4.4
           ports:
             - containerPort: 4000
-              hostPort: 4000   # 对应 .env 的 NORA_PORT，冲突时改这里
+              hostPort: 4000   # 宿主机端口，冲突时改这里（不读 .env）
           env:
             - name: TZ
               value: Asia/Shanghai
@@ -49,7 +49,7 @@ spec:
               value: docker,maven,npm   # 只启用这三种仓库
             - name: NORA_CURATION_MODE
               value: "off"   # 不审查上游包；1.5.0 起代理仓库必须显式设置该项
-            # 以下取自 Secret yudao-env（.env），缺省时使用 NORA 内置默认值
+            # 以下取自 Secret yudao-env，键名与 NORA 原生变量一致；缺省时使用 NORA 内置默认值
             - name: NORA_PUBLIC_URL
               valueFrom:
                 secretKeyRef: { name: yudao-env, key: NORA_PUBLIC_URL, optional: true }

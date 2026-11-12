@@ -32,8 +32,8 @@
     ├── namespace.yaml
     ├── services/
     ├── README.md
-    ├── .env.temp             # 从本机仓库根目录上传的环境变量模板
-    └── .env                  # 在服务器上由 .env.temp 新建，含密码，chmod 600
+    ├── .env.temp             # 本目录专用的环境变量模板（提交）
+    └── .env                  # 本机由 .env.temp 新建后随文件夹上传，含密码，chmod 600（不提交）
 ```
 
 PostgreSQL 表结构脚本不上传，导入时从本机通过 ssh 直接传给 Pod（见第 5 步）。
@@ -63,38 +63,45 @@ sudo chown -R root:yudao /opt/yudao
 sudo chmod -R 2775 /opt/yudao             # setgid：新上传的文件自动属于 yudao 组
 ```
 
-### 2. 本机：上传文件
+### 2. 本机：新建 .env
 
-图形工具（Xftp、WinSCP 等）：远程目录选 `/opt/yudao/`，把本机 `D:\workspace\yudao\yudao-env\gitops-k8s` 整个文件夹拖进去；再把本机仓库根目录的 `.env.temp`（环境变量模板）拖到 `/opt/yudao/gitops-k8s/`。
+每套部署方式各用一份 env：根目录 `.env.temp` / `.env` 只给本机 compose 和 `k8s/` 菜单用；本目录用自己的模板 `gitops-k8s/.env.temp`（只含这 7 个服务的变量，按服务器场景填写）。
+
+在本机 `gitops-k8s` 目录执行，由模板新建 `.env`（已被 `.gitignore` 忽略，不会提交）；`.env` 已存在时不要覆盖（RabbitMQ 密码只在数据卷首次初始化时生效）：
+
+```bash
+cd gitops-k8s
+cp .env.temp .env
+```
+
+然后修改 `.env`，替换所有 `CHANGE_ME`：
+
+| 变量 | 填写 |
+|---|---|
+| `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`RABBITMQ_DEFAULT_PASS`、`MINIO_ROOT_PASSWORD`、`NACOS_AUTH_IDENTITY_VALUE` | 自定义口令；可用 `openssl rand -hex 16` 生成 |
+| `NACOS_AUTH_TOKEN` | `openssl rand -base64 32` 生成 |
+| `NORA_PUBLIC_URL` | `http://<服务器IP>:4000` |
+
+```bash
+grep -n CHANGE_ME .env   # 没有输出才算填完
+```
+
+### 3. 本机：上传文件
+
+图形工具（Xftp、WinSCP 等）：远程目录选 `/opt/yudao/`，把本机 `D:\workspace\yudao\yudao-env\gitops-k8s` 整个文件夹（含 `.env`）拖进去。部分工具默认不显示、不上传以 `.` 开头的文件，上传后在服务器上确认 `.env` 存在。
 
 命令行：在本机 `yudao-env` 仓库根目录执行，`<用户>@<服务器>` 换成实际值；服务器没有 rsync 时先 `sudo apt install -y rsync`：
 
 ```bash
 rsync -av gitops-k8s <用户>@<服务器>:/opt/yudao/
-scp .env.temp <用户>@<服务器>:/opt/yudao/gitops-k8s/.env.temp
 ```
 
-### 3. 服务器：新建 .env
-
-由根目录模板 `.env.temp` 新建 `.env`，本方案用到的口令自动生成随机值，NORA 下载地址改成服务器 IP：
+上传后在服务器上确认并收紧 `.env` 权限（图形工具上传的文件一般是 644）：
 
 ```bash
-cd /opt/yudao/gitops-k8s
-cp .env.temp .env
-chmod 600 .env
-sed -i 's/\r$//' .env                                 # 模板来自 Windows，去掉 CRLF
-sed -i "s|^NACOS_AUTH_TOKEN=.*|NACOS_AUTH_TOKEN=$(openssl rand -base64 32)|" .env
-for k in POSTGRES_PASSWORD REDIS_PASSWORD NACOS_AUTH_IDENTITY_VALUE RABBITMQ_PASSWORD MINIO_ROOT_PASSWORD; do
-  sed -i "s|^$k=.*|$k=$(openssl rand -hex 16)|" .env
-done
-sed -i "s|^NORA_PUBLIC_URL=.*|NORA_PUBLIC_URL=http://$(hostname -I | awk '{print $1}'):4000|" .env
-grep -E '^(POSTGRES_USER|RABBITMQ_USERNAME|MINIO_ROOT_USER|NORA_PUBLIC_URL)=' .env
+ls -l /opt/yudao/gitops-k8s/.env
+chmod 600 /opt/yudao/gitops-k8s/.env
 ```
-
-成功标准：`NORA_PUBLIC_URL` 为服务器 IP。模板中 MySQL、Nacos 连接 MySQL、RocketMQ、Seata 等变量本方案不使用，保留 `CHANGE_ME` 即可。
-
-- 生成的口令在 `.env` 中查看（`cat .env`），后端 yudao-cloud 连接这些服务时使用同样的账号密码。
-- `RABBITMQ_PASSWORD` 只在 `rabbitmq-data` 首次初始化时生效，Secret 建好后不要再重新生成；`.env` 不要覆盖，重新上传模板时只传 `.env.temp`。
 
 ### 4. 服务器：创建 Secret 并部署
 
@@ -112,14 +119,14 @@ kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc -n yudao -o wide
 
 成功标准：7 个 Pod 都是 `Running` 且 `READY 1/1`，PVC 都是 `Bound`。
 
-Secret `yudao-env` 中用到的键：
+Secret `yudao-env` 中用到的键。键名与各镜像原生环境变量一致，清单中按同名取值；每个服务只引用自己的键（不用 `envFrom` 整体注入），除 NORA 外都是必填：
 
-| 服务 | 键 |
+| 服务 | 键（镜像原生变量名） |
 |---|---|
-| postgres | `POSTGRES_USER`、`POSTGRES_PASSWORD` |
-| redis | `REDIS_PASSWORD`（必填） |
+| postgres | `POSTGRES_USER`、`POSTGRES_PASSWORD`（`POSTGRES_DB` 固定为 `ruoyi-vue-pro`，写在清单中） |
+| redis | `REDIS_PASSWORD`（官方镜像没有原生变量，用通用名，经 `--requirepass` 传入；可为空，但必须有这一行） |
 | nacos | `NACOS_AUTH_ENABLE`、`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE`（任一为空 Nacos 会直接退出） |
-| rabbitmq | `RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`（只在数据卷首次初始化时生效） |
+| rabbitmq | `RABBITMQ_DEFAULT_USER`、`RABBITMQ_DEFAULT_PASS`（只在数据卷首次初始化时生效） |
 | minio | `MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD` |
 | nora | `NORA_PUBLIC_URL`、`NORA_MAVEN_PROXIES`、`NORA_NPM_PROXY`、`NORA_DOCKER_PROXIES`（均可选）；不开鉴权，`NORA_AUTH_*` 不读取 |
 
@@ -134,7 +141,7 @@ ssh <用户>@<服务器> 'kubectl --context kubernetes-admin@kubernetes exec -i 
 
 ## 更新
 
-本机修改清单后重新执行第 2 步上传，再在服务器上 `apply`；改了 `.env` 时同时重建 Secret 并重启相关服务（Secret 变化不会自动重启 Pod）：
+本机修改清单后重新执行第 3 步上传，再在服务器上 `apply`；改了 `.env` 时同时重建 Secret 并重启相关服务（Secret 变化不会自动重启 Pod）：
 
 ```bash
 cd /opt/yudao/gitops-k8s

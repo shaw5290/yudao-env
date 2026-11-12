@@ -56,17 +56,28 @@ spec:
             privileged: true
           ports:
             - containerPort: 8848
-              hostPort: 8848    # 对应 .env 的 NACOS_PORT
+              hostPort: 8848    # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 8080
-              hostPort: 8080    # 对应 .env 的 NACOS_CONSOLE_PORT（控制台）
+              hostPort: 8080    # 宿主机端口（控制台），冲突时改这里（不读 .env）
             - containerPort: 9848
-              hostPort: 9848    # 对应 .env 的 NACOS_GRPC_PORT
+              hostPort: 9848    # 宿主机端口，冲突时改这里（不读 .env）
             - containerPort: 9849
-              hostPort: 9849    # 对应 .env 的 NACOS_GRPC_PORT_2
-          envFrom:
-            - secretRef:
-                name: yudao-env   # 提供 NACOS_AUTH_ENABLE/TOKEN/IDENTITY_KEY/IDENTITY_VALUE，跟镜像原生变量名一致
+              hostPort: 9849    # 宿主机端口，冲突时改这里（不读 .env）
           env:
+            # 以下取自 Secret yudao-env，键名与 nacos 镜像原生变量一致；任一为空 Nacos 会直接退出
+            - name: NACOS_AUTH_ENABLE
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_AUTH_ENABLE }
+            - name: NACOS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_AUTH_TOKEN }
+            - name: NACOS_AUTH_IDENTITY_KEY
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_AUTH_IDENTITY_KEY }
+            - name: NACOS_AUTH_IDENTITY_VALUE
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NACOS_AUTH_IDENTITY_VALUE }
+            # 以下为固定配置
             - name: JVM_XMS
               value: 256m
             - name: JVM_XMX
