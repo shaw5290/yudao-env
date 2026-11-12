@@ -1,0 +1,52 @@
+# ==================== ELK（Elasticsearch + Logstash + Kibana） ====================
+# 单独使用：docker compose -f compose/services/elk.yaml --env-file .env --profile elk up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  # ELK：Elasticsearch（存储）+ Logstash（采集）+ Kibana（查询），日志聚合，仅用于开发测试
+  # 应用以 JSON 格式通过 TCP 发送日志到 Logstash，Kibana 中按 traceId、app_name 等字段查询；已关闭安全认证
+  elasticsearch:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.23
+    profiles: ["elk"]
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+  logstash:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-logstash
+    image: docker.elastic.co/logstash/logstash:8.19.23
+    profiles: ["elk"]
+    depends_on:
+      - elasticsearch
+    ports:
+      - "${LOGSTASH_TCP_PORT:-5044}:5044"   # tcp + json_lines（yudao 应用的 yudao.logstash.destination）
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+      XPACK_MONITORING_ENABLED: "false"
+    volumes:
+      - ../../config/elk/logstash/pipeline:/usr/share/logstash/pipeline:ro
+
+  kibana:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-kibana
+    image: docker.elastic.co/kibana/kibana:8.19.23
+    profiles: ["elk"]
+    depends_on:
+      - elasticsearch
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"   # Kibana 控制台
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      I18N_LOCALE: zh-CN
+
+volumes:
+  elasticsearch-data:

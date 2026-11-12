@@ -1,0 +1,23 @@
+# ==================== XXL-Job 调度中心（依赖 mysql，由脚本先启动） ====================
+# 单独使用：docker compose -f compose/services/xxl-job.yaml --env-file .env --profile xxl-job up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  xxl-job-admin:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-xxl-job-admin
+    image: xuxueli/xxl-job-admin:2.4.1
+    profiles: ["xxl-job"]
+    ports:
+      - "${XXL_JOB_PORT:-9090}:8080"
+    environment:
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://mysql:3306/${XXL_JOB_DB_NAME:-xxl_job}?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai&useSSL=false
+        --spring.datasource.username=root
+        --spring.datasource.password=${MYSQL_ROOT_PASSWORD:-123456}
+    volumes:
+      - xxl-job-logs:/data/applogs
+
+volumes:
+  xxl-job-logs:

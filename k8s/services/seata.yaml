@@ -1,0 +1,59 @@
+# ==================== seata（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 seata.bat / seata.sh
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seata-server
+  labels:
+    app: seata-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seata-server
+  template:
+    metadata:
+      labels:
+        app: seata-server
+    spec:
+      containers:
+        - name: seata-server
+          image: apache/seata-server:2.5.0   # 与 yudao-cloud 的 Seata 客户端版本保持一致
+          ports:
+            - containerPort: 8091
+              hostPort: 8091   # 对应 .env 的 SEATA_PORT
+            - containerPort: 7091
+              hostPort: 7091   # 对应 .env 的 SEATA_DASHBOARD_PORT
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 SEATA_IP
+          env:
+            - name: SEATA_PORT
+              value: "8091"
+            # 注册中心 / 存储配置见 seata/resources/application.yml，Nacos、MySQL 地址为 k8s Service 名（nacos、mysql）
+          volumeMounts:
+            - name: config
+              mountPath: /seata-server/resources/application.yml
+              subPath: application.yml
+              readOnly: true
+      volumes:
+        - name: config
+          hostPath:
+            path: /run/desktop/mnt/host/d/workspace/yudao/yudao-env/config/seata/resources
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seata-server
+spec:
+  selector:
+    app: seata-server
+  ports:
+    - name: server
+      port: 8091
+      targetPort: 8091
+    - name: dashboard
+      port: 7091
+      targetPort: 7091

@@ -1,0 +1,79 @@
+# ==================== tdengine（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 tdengine.bat / tdengine.sh
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tdengine-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tdengine-log
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tdengine
+  labels:
+    app: tdengine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tdengine
+  template:
+    metadata:
+      labels:
+        app: tdengine
+    spec:
+      containers:
+        - name: tdengine
+          image: tdengine/tdengine:3.3.6.0
+          ports:
+            - containerPort: 6041
+              hostPort: 6041   # 对应 .env 的 TDENGINE_PORT，taosAdapter REST/WebSocket
+            - containerPort: 6030
+              hostPort: 6030   # taosd 原生连接端口
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: TAOS_FQDN
+              value: tdengine
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/taos
+            - name: log
+              mountPath: /var/log/taos
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tdengine-data
+        - name: log
+          persistentVolumeClaim:
+            claimName: tdengine-log
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tdengine
+spec:
+  selector:
+    app: tdengine
+  ports:
+    - name: rest
+      port: 6041
+      targetPort: 6041
+    - name: native
+      port: 6030
+      targetPort: 6030

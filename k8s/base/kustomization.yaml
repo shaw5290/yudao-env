@@ -1,0 +1,10 @@
+# ==================== 公共基础配置（Kustomize Component）====================
+# 各方案（schemes/*/kustomization.yaml）和单服务脚本生成的临时方案都通过 components: [../../base] 引用；修改这里会影响所有服务
+# Namespace 本身在 namespace.yaml，由脚本先单独 apply（多个方案可能同时引用 base，放进 Component 会重复）
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: yudao
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: yudao-env
+    includeSelectors: false   # 只加到 metadata，不改 selector（已有 Deployment 的 selector 不可变）

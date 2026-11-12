@@ -1,0 +1,8 @@
+# ==================== 公共基础配置 ====================
+# 各服务通过 extends: { file: ../base.yaml, service: base } 引用，这里的服务 base 本身不会被启动
+# 修改这里会影响所有服务（如重启策略、时区、日志轮转）
+services:
+  base:
+    restart: always
+    environment:
+      TZ: Asia/Shanghai

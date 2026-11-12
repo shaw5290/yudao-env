@@ -1,0 +1,8 @@
+# ==================== 方案：核心服务（mysql、redis） ====================
+# 用法（在仓库根目录执行）：docker compose -f compose/schemes/core.yaml --env-file .env [--profile <name>] up -d
+# mysql、redis 没有 profile，up -d 默认只启动它们；其余服务需要 --profile <name>
+# 新方案：复制本文件，增删 include 中的服务文件即可
+name: yudao
+include:
+  - ../services/mysql.yaml
+  - ../services/redis.yaml

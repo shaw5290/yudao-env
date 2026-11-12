@@ -1,0 +1,36 @@
+# ==================== nginx（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 nginx.bat / nginx.sh
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+              hostPort: 80   # 对应 .env 的 NGINX_PORT
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80

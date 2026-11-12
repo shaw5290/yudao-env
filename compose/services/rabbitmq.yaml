@@ -1,0 +1,28 @@
+# ==================== RabbitMQ ====================
+# 单独使用：docker compose -f compose/services/rabbitmq.yaml --env-file .env --profile rabbitmq up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  rabbitmq:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-rabbitmq
+    image: rabbitmq:4.1-management
+    profiles: ["rabbitmq"]
+    hostname: rabbitmq # 数据目录按节点名（rabbit@<hostname>）存放，固定 hostname 避免容器重建后数据丢失
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672" # AMQP
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672" # 管理控制台
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  rabbitmq-data:

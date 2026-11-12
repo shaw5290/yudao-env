@@ -1,0 +1,25 @@
+# ==================== 方案：全部服务（核心 + 全部中间件） ====================
+# 部署：kubectl --context docker-desktop kustomize --load-restrictor LoadRestrictionsNone k8s/schemes/all | kubectl --context docker-desktop apply -f -
+# （引用了目录外的 services/*.yaml，必须加 --load-restrictor LoadRestrictionsNone，所以不能直接 apply -k；推荐用 yudao-k8s 菜单）
+# 新方案：复制本目录，增删 resources 中的服务文件即可
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../services/mysql.yaml
+  - ../../services/redis.yaml
+  - ../../services/nacos.yaml
+  - ../../services/tdengine.yaml
+  - ../../services/nginx.yaml
+  - ../../services/jenkins.yaml
+  - ../../services/minio.yaml
+  - ../../services/rocketmq.yaml
+  - ../../services/xxl-job.yaml
+  - ../../services/seata.yaml
+  - ../../services/sentinel.yaml
+  - ../../services/postgres.yaml
+  - ../../services/lgtm.yaml
+  - ../../services/elk.yaml
+  - ../../services/rabbitmq.yaml
+  - ../../services/nora.yaml
+components:
+  - ../../base   # 公共配置：namespace yudao、公共标签

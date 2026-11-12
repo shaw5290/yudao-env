@@ -1,0 +1,13 @@
+# ==================== Redis 7（核心） ====================
+# 单独使用：docker compose -f compose/services/redis.yaml --env-file .env up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  redis:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-redis
+    image: redis:7
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]

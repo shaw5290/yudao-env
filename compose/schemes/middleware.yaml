@@ -1,0 +1,20 @@
+# ==================== 方案：全部可选中间件 ====================
+# 用法（在仓库根目录执行）：docker compose -f compose/schemes/middleware.yaml --env-file .env [--profile <name>] up -d
+# mysql、redis 没有 profile，up -d 默认只启动它们；其余服务需要 --profile <name>
+# 新方案：复制本文件，增删 include 中的服务文件即可
+name: yudao
+include:
+  - ../services/nginx.yaml
+  - ../services/nacos.yaml
+  - ../services/tdengine.yaml
+  - ../services/jenkins.yaml
+  - ../services/postgres.yaml
+  - ../services/minio.yaml
+  - ../services/rocketmq.yaml
+  - ../services/rabbitmq.yaml
+  - ../services/nora.yaml
+  - ../services/xxl-job.yaml
+  - ../services/seata.yaml
+  - ../services/sentinel.yaml
+  - ../services/lgtm.yaml
+  - ../services/elk.yaml

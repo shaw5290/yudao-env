@@ -1,0 +1,67 @@
+# ==================== postgres（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 postgres.bat / postgres.sh
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              hostPort: 5432   # 对应 .env 的 POSTGRES_PORT
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: initdb
+          hostPath:
+            path: /run/desktop/mnt/host/d/workspace/yudao/yudao-env/config/postgres/initdb
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

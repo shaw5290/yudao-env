@@ -1,0 +1,20 @@
+# ==================== Sentinel Dashboard ====================
+# 单独使用：docker compose -f compose/services/sentinel.yaml --env-file .env --profile sentinel up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  sentinel-dashboard:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-sentinel-dashboard
+    image: bladex/sentinel-dashboard:1.8.8
+    profiles: ["sentinel"]
+    ports:
+      - "${SENTINEL_PORT:-8858}:8858"
+    environment:
+      JAVA_OPTS: "-Dserver.port=8858 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard"
+    volumes:
+      - sentinel-logs:/root/logs
+
+volumes:
+  sentinel-logs:

@@ -1,0 +1,28 @@
+# ==================== Jenkins ====================
+# 单独使用：docker compose -f compose/services/jenkins.yaml --env-file .env --profile jenkins up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  jenkins:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-jenkins
+    image: jenkins/jenkins:lts
+    user: root
+    profiles: ["jenkins"]
+    ports:
+      - "${JENKINS_PORT:-8089}:8080"
+    environment:
+      JAVA_OPTS: >-
+        -Xms1g -Xmx2g
+        -XX:+UseG1GC
+        -Dhudson.model.LoadStatistics.clock=1000
+        -Dhudson.model.LoadStatistics.decay=0.1
+        -Djava.awt.headless=true
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
+
+volumes:
+  jenkins-home:

@@ -1,0 +1,29 @@
+# ==================== PostgreSQL ====================
+# 单独使用：docker compose -f compose/services/postgres.yaml --env-file .env --profile postgres up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  postgres:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-postgres
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-log:/var/log/postgresql
+      - ../../config/postgres/initdb:/docker-entrypoint-initdb.d:ro   # 首次初始化（空卷）时执行，建库 ruoyi-vue-pro 并导入表结构
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-data:
+  postgres-log:

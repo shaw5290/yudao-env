@@ -1,0 +1,13 @@
+# ==================== Nginx ====================
+# 单独使用：docker compose -f compose/services/nginx.yaml --env-file .env --profile nginx up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  nginx:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-nginx
+    image: nginx:latest
+    profiles: ["nginx"]
+    ports:
+      - "${NGINX_PORT:-80}:80"

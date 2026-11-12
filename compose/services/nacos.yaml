@@ -1,0 +1,53 @@
+# ==================== Nacos 3.x（控制台端口 8080；依赖 mysql，由脚本先启动） ====================
+# 单独使用：docker compose -f compose/services/nacos.yaml --env-file .env --profile nacos up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  nacos:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-nacos
+    image: nacos/nacos-server:v3.0.3
+    profiles: ["nacos"]
+    ports:
+      - "${NACOS_PORT:-8848}:8848"
+      - "${NACOS_CONSOLE_PORT:-8080}:8080"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+      - "${NACOS_GRPC_PORT_2:-9849}:9849"
+    privileged: true
+    environment:
+      JVM_XMS: 256m
+      JVM_XMX: 256m
+      JVM_MS: 64m
+      JVM_MMS: 64m
+      MODE: standalone
+      NACOS_REPLICAS: 1
+      PREFER_HOST_MODE: ip
+      NACOS_SERVER_IP: 127.0.0.1
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: ${NACOS_DB_NAME:-nacos}
+      MYSQL_SERVICE_USER: ${NACOS_DB_USER:-nacos}
+      MYSQL_SERVICE_PASSWORD: ${NACOS_DB_PASSWORD:-123456}
+      MYSQL_SERVICE_DB_PARAM: characterEncoding=utf8&connectTimeout=1000&socketTimeout=3000&autoReconnect=true&useUnicode=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      NACOS_AUTH_ENABLE: ${NACOS_AUTH_ENABLE:-false}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-MVykIz83uHdNY7BAZWAC23eDPLVLDqaFBft1EOsmqFE=}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-yudao}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-yudao}
+      NACOS_AUTH_USER_AGENT_AUTH_WHITE_ENABLE: 1
+    volumes:
+      - nacos-logs:/home/nacos/logs
+      - nacos-plugins:/home/nacos/plugins
+      - nacos-data:/home/nacos/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/nacos/actuator/health"]
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      timeout: 10s
+
+volumes:
+  nacos-logs:
+  nacos-plugins:
+  nacos-data:

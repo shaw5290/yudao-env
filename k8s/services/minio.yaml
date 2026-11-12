@@ -1,0 +1,63 @@
+# ==================== minio（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用同名 minio.bat / minio.sh
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+              hostPort: 9000   # 对应 .env 的 MINIO_PORT
+            - containerPort: 9001
+              hostPort: 9001   # 对应 .env 的 MINIO_CONSOLE_PORT
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 MINIO_ROOT_USER / MINIO_ROOT_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001

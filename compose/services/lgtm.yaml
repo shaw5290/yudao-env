@@ -1,0 +1,22 @@
+# ==================== Grafana LGTM ====================
+# 单独使用：docker compose -f compose/services/lgtm.yaml --env-file .env --profile lgtm up -d（推荐用同名 .bat / .sh 脚本）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/
+name: yudao
+services:
+  # Grafana LGTM：OTel Collector + Loki（日志）+ Tempo（链路）+ Prometheus（指标）+ Grafana，一体化可观测性，仅用于开发测试
+  # 应用通过 OTLP 上报 trace 与日志，Grafana 中可在链路与日志之间互相跳转；默认账号 admin / admin
+  lgtm:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-lgtm
+    image: grafana/otel-lgtm:0.37.0
+    profiles: ["lgtm"]
+    ports:
+      - "${LGTM_GRAFANA_PORT:-3000}:3000"     # Grafana 控制台
+      - "${LGTM_OTLP_GRPC_PORT:-4317}:4317"   # OTLP gRPC
+      - "${LGTM_OTLP_HTTP_PORT:-4318}:4318"   # OTLP HTTP（yudao 应用默认上报到这里）
+    volumes:
+      - lgtm-data:/data
+
+volumes:
+  lgtm-data:
