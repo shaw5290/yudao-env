@@ -35,6 +35,10 @@ docker-compose.override.yml
 compose/**/docker-compose.override.yml
 .env
 .env.local
+.env.*
+!.env.temp
+# gitops-k8s 早期使用的口令文件名（现在统一用 .env）
+gitops-k8s/*.env
 
 # ===== 批处理脚本（本机用，按需放开）=====
 # compose/yudao.bat

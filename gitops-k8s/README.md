@@ -8,7 +8,7 @@
 | redis | `redis:7` | 6379 | 无（不持久化） |
 | nacos | `nacos/nacos-server:v3.0.3` | 8848、8080（控制台）、9848、9849 | `nacos-data`、`nacos-logs`、`nacos-plugins` |
 | rabbitmq | `rabbitmq:4.1-management` | 5672、15672（管理控制台） | `rabbitmq-data` 2Gi |
-| minio | `minio/minio:latest` | 9000、9001（控制台） | `minio-data` 5Gi |
+| minio | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 9000、9001（控制台） | `minio-data` 5Gi |
 | lgtm | `grafana/otel-lgtm:0.37.0` | 3000（Grafana）、4317、4318 | `lgtm-data` 5Gi |
 | nora | `ghcr.io/getnora-io/nora:1.4.4` | 4000 | `nora-data` 20Gi |
 
@@ -18,6 +18,10 @@
 - **不使用 hostPath**：不依赖 Docker Desktop 的 `/run/desktop/mnt/host/...` 路径。
   - postgres 不挂载 `config/postgres/initdb`，由 `POSTGRES_DB=ruoyi-vue-pro` 建业务库，表结构需手工导入（见下文）。
   - nacos 不连接 MySQL，使用内置存储（Derby），数据在 `nacos-data` PVC。
+- **环境变量单独一份**：用本目录的 `.env.temp` / `.env`，与根目录（compose、`k8s/` 菜单）分开维护，只含这 7 个服务的变量。
+- **变量名用镜像原生名**：如 `POSTGRES_PASSWORD`、`MINIO_ROOT_USER`、`NACOS_AUTH_TOKEN`、`RABBITMQ_DEFAULT_USER`、`NORA_PUBLIC_URL`，清单中按同名取值、不改名；镜像没有原生变量的（redis 密码）用通用名 `REDIS_PASSWORD`。根目录的 `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 在这里是 `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS`。
+- **每个服务只取自己的键**：用 `secretKeyRef` 逐个引用 Secret `yudao-env`，不用 `envFrom` 整体注入；除 NORA 外都是必填，缺键时 Pod 报 `CreateContainerConfigError`，不会带着镜像默认口令启动。
+- **端口写在清单里**：K8s 不支持变量替换，各工具的端口写在 `services/<工具>.yaml` 的 `hostPort`，`.env` 中没有端口变量；冲突时直接改清单。
 - 清单从 `k8s/services/` 复制后修改，两边**分开维护**；改镜像版本、端口时注意同步。
 - 依赖集群有默认 StorageClass（kubeadm 集群按 `k8s-single.md` 第六节安装 local-path）。
 
@@ -67,12 +71,14 @@ sudo chmod -R 2775 /opt/yudao             # setgid：新上传的文件自动属
 
 每套部署方式各用一份 env：根目录 `.env.temp` / `.env` 只给本机 compose 和 `k8s/` 菜单用；本目录用自己的模板 `gitops-k8s/.env.temp`（只含这 7 个服务的变量，按服务器场景填写）。
 
-在本机 `gitops-k8s` 目录执行，由模板新建 `.env`（已被 `.gitignore` 忽略，不会提交）；`.env` 已存在时不要覆盖（RabbitMQ 密码只在数据卷首次初始化时生效）：
+在本机 `gitops-k8s` 目录执行，由模板新建 `.env`（`.env`、`.env.local`、`.env.*` 已被 `.gitignore` 忽略，不会提交）；`.env` 已存在时不要覆盖（RabbitMQ 密码只在数据卷首次初始化时生效）：
 
 ```bash
 cd gitops-k8s
 cp .env.temp .env
 ```
+
+需要多套配置时按 `.env.local`、`.env.<环境>` 命名，建 Secret 时把 `--from-env-file=.env` 换成对应文件名。
 
 然后修改 `.env`，替换所有 `CHANGE_ME`：
 
@@ -88,7 +94,7 @@ grep -n CHANGE_ME .env   # 没有输出才算填完
 
 ### 3. 本机：上传文件
 
-图形工具（Xftp、WinSCP 等）：远程目录选 `/opt/yudao/`，把本机 `D:\workspace\yudao\yudao-env\gitops-k8s` 整个文件夹（含 `.env`）拖进去。部分工具默认不显示、不上传以 `.` 开头的文件，上传后在服务器上确认 `.env` 存在。
+图形工具（Xftp、WinSCP 等）：远程目录选 `/opt/yudao/`，把本机 `D:\workspace\yudao\yudao-env\gitops-k8s` 整个文件夹（含 `.env`）拖进去。上传后在服务器上确认 `.env` 存在。
 
 命令行：在本机 `yudao-env` 仓库根目录执行，`<用户>@<服务器>` 换成实际值；服务器没有 rsync 时先 `sudo apt install -y rsync`：
 
@@ -111,11 +117,16 @@ chmod 600 /opt/yudao/gitops-k8s/.env
 cd /opt/yudao/gitops-k8s
 kubectl config get-contexts                          # 确认上下文名
 
-kubectl --context kubernetes-admin@kubernetes create namespace yudao --dry-run=client -o yaml | kubectl --context kubernetes-admin@kubernetes apply -f -
-kubectl --context kubernetes-admin@kubernetes create secret generic yudao-env --from-env-file=.env -n yudao --dry-run=client -o yaml | kubectl --context kubernetes-admin@kubernetes apply -f -
+kubectl --context kubernetes-admin@kubernetes apply -f namespace.yaml
+kubectl --context kubernetes-admin@kubernetes -n yudao delete secret yudao-env --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao create secret generic yudao-env --from-env-file=.env
 kubectl --context kubernetes-admin@kubernetes apply -k .
 kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc -n yudao -o wide
 ```
+
+- 每条命令单独一行，不用管道 `|` 和行尾 `\` 续行：整行粘贴时终端可能截断管道之后的部分（报 `flag needs an argument: --context`），复制的 `\` 后面多出空格时续行失效（报 `-o: command not found`）。
+- Secret 用"先删再建"更新：`create` 遇到已存在的 Secret 会报 `AlreadyExists`；成功时输出 `secret/yudao-env created`。
+- 检查 Secret：`kubectl --context kubernetes-admin@kubernetes -n yudao describe secret yudao-env`，只列键名和字节数，不显示值。
 
 成功标准：7 个 Pod 都是 `Running` 且 `READY 1/1`，PVC 都是 `Bound`。
 
@@ -135,18 +146,20 @@ Secret `yudao-env` 中用到的键。键名与各镜像原生环境变量一致�
 postgres 就绪后，只需在空库上执行一次（脚本首行是 `\connect "ruoyi-vue-pro"`）。在本机 `yudao-env` 仓库根目录执行，SQL 经 ssh 直接传给服务器上的 Pod，不落盘：
 
 ```bash
-ssh <用户>@<服务器> 'kubectl --context kubernetes-admin@kubernetes exec -i -n yudao deploy/postgres -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"' < config/postgres/initdb/02-yudao-schema.sql
-ssh <用户>@<服务器> 'kubectl --context kubernetes-admin@kubernetes exec -i -n yudao deploy/postgres -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"' < config/postgres/initdb/03-yudao-quartz.sql
+PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao deploy/postgres -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
+ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/02-yudao-schema.sql
+ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/03-yudao-quartz.sql
 ```
 
 ## 更新
 
-本机修改清单后重新执行第 3 步上传，再在服务器上 `apply`；改了 `.env` 时同时重建 Secret 并重启相关服务（Secret 变化不会自动重启 Pod）：
+本机修改清单后重新执行第 3 步上传，再在服务器上 `apply`。清单中的环境变量引用变化时 `apply -k` 会自动重建对应 Pod；只改了 `.env` 的值时，重建 Secret 后需要手动重启（Secret 变化不会自动重启 Pod）：
 
 ```bash
 cd /opt/yudao/gitops-k8s
 kubectl --context kubernetes-admin@kubernetes apply -k .
-kubectl --context kubernetes-admin@kubernetes create secret generic yudao-env --from-env-file=.env -n yudao --dry-run=client -o yaml | kubectl --context kubernetes-admin@kubernetes apply -f -
+kubectl --context kubernetes-admin@kubernetes -n yudao delete secret yudao-env --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao create secret generic yudao-env --from-env-file=.env
 kubectl --context kubernetes-admin@kubernetes rollout restart deployment -n yudao               # 或只重启指定服务，如 deployment/nacos
 ```
 
@@ -188,7 +201,7 @@ kubectl --context kubernetes-admin@kubernetes rollout status deployment/nacos -n
 kubectl --context kubernetes-admin@kubernetes rollout restart deployment -n yudao
 ```
 
-有 PVC 的服务是 `Recreate` 策略，重启时先停旧 Pod 再起新 Pod，期间服务短暂不可用。
+所有服务都是 `Recreate` 策略（使用 hostPort / 单写 PVC，单节点上新旧 Pod 不能同时运行），重启时先停旧 Pod 再起新 Pod，期间服务短暂不可用。
 
 ### 停止 / 启动（保留全部资源）
 
@@ -216,6 +229,72 @@ kubectl --context kubernetes-admin@kubernetes delete -k .
 ```
 
 删除数据前先确认是否需要备份。`local-path` 的 PVC 删除后，节点 `/opt/local-path-provisioner` 下对应目录也会被清理。
+
+## NORA 上游加速地址
+
+NORA 作为 Docker / Maven / npm 的代理缓存，上游配置在 `.env`（模板 `.env.temp`）。原则：**只用有公司或开源项目背书、长期运行的国内加速；官方地址放最后兜底**；不用来源不明的个人 / 公益加速站。
+
+| 仓库 | 变量 | 顺序（前一个失败再试下一个） | 提供方 |
+|---|---|---|---|
+| Maven | `NORA_MAVEN_PROXIES` | 1. `https://maven.aliyun.com/repository/public` | 阿里云 |
+| | | 2. `https://repo.huaweicloud.com/repository/maven` | 华为云 |
+| | | 3. `https://mirrors.cloud.tencent.com/nexus/repository/maven-public` | 腾讯云 |
+| | | 4. `https://repo1.maven.org/maven2`（官方） | Maven Central |
+| Docker | `NORA_DOCKER_PROXIES` | 1. `https://docker.m.daocloud.io` | DaoCloud（开源项目 DaoCloud/public-image-mirror） |
+| | | 2. `https://docker.1panel.live` | 飞致云 1Panel |
+| | | 3. `https://registry-1.docker.io`（官方） | Docker Hub |
+| npm | `NORA_NPM_PROXY` | `https://registry.npmmirror.com` | npmmirror（阿里云支持） |
+
+- **npm 只能配一个上游**：NORA 的 npm 只支持一个默认上游，没有按顺序回退；npmmirror 不可用时，把 `NORA_NPM_PROXY` 改为官方 `https://registry.npmjs.org`。
+- **云厂商的 Docker Hub 加速不可用**：阿里云、腾讯云、华为云的 Docker Hub 加速器只对各自云内网络开放，服务器在本地局域网，不在列表中。
+- **Docker 加速仍有失效风险**：Docker Hub 国内加速都是免费服务，提供方可能限流或调整；失效时 NORA 会自动尝试下一个，最后回到官方地址（国内直连官方通常也不通）。定期按下文检查，失效的删除。
+- **安全**：Maven 依赖带 `.sha1` / `.md5` 校验；Docker 按 digest 拉取的层内容自校验，但**按标签**拉取时标签指向哪个 digest 由上游决定。生产用的关键镜像在清单中写 `镜像@sha256:...` 固定 digest。
+- 每个 Docker 上游的缓存按地址分别存放，调整顺序或换地址后会重新从上游下载。
+- 改完 `.env` 后重建 Secret 并重启 nora（见「更新」）。
+
+检查上游是否可用（在服务器上执行）：
+
+```bash
+# Maven、npm：返回 200 为可用
+for u in https://maven.aliyun.com/repository/public https://repo.huaweicloud.com/repository/maven https://mirrors.cloud.tencent.com/nexus/repository/maven-public https://repo1.maven.org/maven2; do
+  printf '%s %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$u/org/springframework/spring-core/maven-metadata.xml")" "$u"
+done
+printf '%s %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://registry.npmmirror.com/vue)" npmmirror
+
+# Docker：/v2/ 返回 200 或 401 为在线（401 是正常的鉴权质询），000 为不通
+for u in https://docker.m.daocloud.io https://docker.1panel.live https://registry-1.docker.io; do
+  printf '%s %s\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$u/v2/")" "$u"
+done
+```
+
+2026-11-12 在本机检查：Maven 4 个、npmmirror 均为 200；DaoCloud 401、1Panel 200（在线）；Docker Hub 官方 000（国内不通，只作兜底）。
+
+## 常见问题
+
+### Pod 报 `CreateContainerConfigError`
+
+原因：Secret `yudao-env` 不存在，或缺少该服务的键（如 `.env` 中没有 `REDIS_PASSWORD` 这一行）。
+
+解决：只看键名、不显示值：
+
+```bash
+kubectl --context kubernetes-admin@kubernetes describe pod -n yudao -l app=redis | tail -5
+kubectl --context kubernetes-admin@kubernetes -n yudao describe secret yudao-env
+```
+
+按"Secret `yudao-env` 中用到的键"补齐 `.env`，重建 Secret 后 `rollout restart` 对应服务。
+
+### Pod 报 `ImagePullBackOff`
+
+原因：镜像拉取失败。服务器配置的 Docker Hub 加速只对 Docker Hub 镜像生效，加速地址也可能没有缓存某个标签。
+
+解决：`describe pod` 查看 Events 中的具体报错，换可用的加速地址或在清单中改为可拉取的固定版本。
+
+### RabbitMQ 账号密码不生效
+
+原因：`RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` 只在 `rabbitmq-data` 首次初始化时写入，之后修改 `.env` 不会生效。
+
+解决：在管理控制台（15672）改密码；或在确认没有数据后，删除并重建 rabbitmq（`delete -f services/rabbitmq.yaml` 会删除其 PVC），再 `apply -f services/rabbitmq.yaml`。
 
 ## 校验
 

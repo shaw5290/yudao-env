@@ -9,6 +9,8 @@ metadata:
     app: redis
 spec:
   replicas: 1
+  strategy:
+    type: Recreate   # 使用 hostPort，单节点上新旧 Pod 不能同时占用端口，先停旧 Pod
   selector:
     matchLabels:
       app: redis

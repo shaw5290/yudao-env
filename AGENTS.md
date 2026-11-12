@@ -241,6 +241,16 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 数据卷用 PVC（走 Docker Desktop 默认 StorageClass）；挂载仓库文件用 `hostPath`，指向 `config/`，路径格式 `/run/desktop/mnt/host/<盘符小写>/<路径>`，当前为 `/run/desktop/mnt/host/d/workspace/yudao/yudao-env/config/...`。
 - 服务间互访用 Service 名（如 `mysql`、`nacos:8848`、`rocketmq-namesrv:9876`），并加注释 `# k8s Service 名`。
 
+### GitOps 清单（`gitops-k8s/`）
+
+- 服务器手动部署用（上传到 `/opt/yudao/gitops-k8s` 后 `kubectl apply -k .`），目录**自包含**：只引用本目录内文件，不用 hostPath，不依赖 `--load-restrictor`。清单从 `k8s/services/` 复制后修改，两边分开维护。
+- 环境变量单独一份：本目录 `.env.temp`（提交）复制为 `.env`（不提交；`.env`、`.env.local`、`.env.*` 已被 `.gitignore` 忽略，`.env.temp` 除外），与根目录 `.env.temp` 分开维护，只含本目录服务用到的变量。
+- 变量名用各镜像**原生环境变量名**（`POSTGRES_*`、`MINIO_ROOT_*`、`NACOS_AUTH_*`、`RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS`、`NORA_*`），清单中按同名取值、不改名；镜像没有原生变量的（redis 密码）用通用名 `REDIS_PASSWORD`。
+- 每个服务用 `secretKeyRef: { name: yudao-env, key: <同名> }` 只引用自己的键，**不用 `envFrom`** 整体注入；除可选的 `NORA_*` 外不加 `optional: true`，缺键时直接报错而不是带默认口令启动。
+- 端口写在 `services/<工具>.yaml` 的 `hostPort` 字面量，行尾注释 `# 宿主机端口，冲突时改这里（不读 .env）`；`.env.temp` 中不放端口变量。
+- 新增服务时同步 `kustomization.yaml` 的 `resources`、`.env.temp` 对应分组、`README.md` 的服务表和 Secret 键表。
+- README 中的 kubectl 命令写完整的 `kubectl --context kubernetes-admin@kubernetes ...`，不用 `$K` 之类的变量缩写；每条命令单独一行，不用管道 `|` 和行尾 `\` 续行（粘贴时管道后半截会被截断、`\` 后多出空格会使续行失效），Secret 用 `delete secret --ignore-not-found` + `create secret --from-env-file` 先删再建。
+
 ### Windows 批处理（`compose\yudao.bat`、`k8s\yudao-k8s.bat`）
 
 - 只维护这两个菜单；不再提供 `.sh`、单服务脚本。
@@ -285,7 +295,7 @@ yudao-env/
 │   ├── services/               # 每个服务一个文件，与 compose/services 同名
 │   ├── schemes/                # 方案：core/、middleware/、all/（kustomization.yaml）
 │   └── .render/                # 菜单启动单个服务时生成的临时方案（不提交）
-├── gitops-k8s/                 # 自包含 GitOps 方案（postgres redis nacos rabbitmq minio lgtm nora），不用 hostPath，上传到服务器 /opt/yudao/gitops-k8s 后 apply -k；env 用本目录 .env.temp，与根目录 .env.temp 分开维护
+├── gitops-k8s/                 # 自包含 GitOps 方案（postgres redis nacos rabbitmq minio lgtm nora），不用 hostPath，上传到服务器 /opt/yudao/gitops-k8s 后 apply -k；env 用本目录 .env.temp 复制出的 .env，与根目录 .env.temp 分开维护
 ├── config/                     # compose 与 k8s 共用的挂载文件
 │   ├── mysql/initdb/           # MySQL 首次初始化脚本（01 建库建用户 ~ 06 Quartz）
 │   ├── postgres/initdb/        # PostgreSQL 首次初始化脚本（01 建库 ~ 03 Quartz）
