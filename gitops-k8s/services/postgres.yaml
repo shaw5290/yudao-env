@@ -1,0 +1,64 @@
+# ==================== postgres（每个服务一个文件）====================
+# 由 ../kustomization.yaml 引用；本目录自包含，供 GitOps（Argo CD / Flux）直接同步，与 k8s/services 分开维护
+# 不写 namespace，由 ../kustomization.yaml 统一添加；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              hostPort: 5432   # 对应 .env 的 POSTGRES_PORT
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: POSTGRES_DB
+              value: ruoyi-vue-pro   # 首次初始化时直接建业务库（代替 config/postgres/initdb/01），覆盖 Secret 中的 POSTGRES_DB
+          envFrom:
+            - secretRef:
+                name: yudao-env   # 提供 POSTGRES_USER / POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

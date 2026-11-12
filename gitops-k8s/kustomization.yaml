@@ -1,0 +1,20 @@
+# ==================== GitOps 方案：基础依赖（postgres、redis、nora、nacos、rabbitmq、lgtm、minio） ====================
+# 目录自包含：只引用本目录内的文件，Argo CD / Flux 可直接指向 yudao-env/gitops-k8s，也可手工部署：
+#   kubectl --context <集群上下文> apply -k gitops-k8s
+# Secret yudao-env 不入库，部署前手工创建，见 README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: yudao
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: yudao-env
+    includeSelectors: false   # 只加到 metadata，不改 selector（已有 Deployment 的 selector 不可变）
+resources:
+  - namespace.yaml
+  - services/postgres.yaml
+  - services/redis.yaml
+  - services/nacos.yaml
+  - services/rabbitmq.yaml
+  - services/minio.yaml
+  - services/lgtm.yaml
+  - services/nora.yaml

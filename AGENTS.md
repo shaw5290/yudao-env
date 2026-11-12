@@ -285,6 +285,7 @@ yudao-env/
 │   ├── services/               # 每个服务一个文件，与 compose/services 同名
 │   ├── schemes/                # 方案：core/、middleware/、all/（kustomization.yaml）
 │   └── .render/                # 菜单启动单个服务时生成的临时方案（不提交）
+├── gitops-k8s/                 # 自包含 GitOps 方案（postgres redis nacos rabbitmq minio lgtm nora），不用 hostPath，可 apply -k / Argo CD 同步
 ├── config/                     # compose 与 k8s 共用的挂载文件
 │   ├── mysql/initdb/           # MySQL 首次初始化脚本（01 建库建用户 ~ 06 Quartz）
 │   ├── postgres/initdb/        # PostgreSQL 首次初始化脚本（01 建库 ~ 03 Quartz）
@@ -293,7 +294,7 @@ yudao-env/
 │   ├── nora/auth/              # NORA 鉴权用 users.htpasswd（bcrypt，不提交，仅提交 .gitkeep）
 │   └── tdengine/               # TDengine 建库说明
 ├── infra/                      # 基础环境安装配置，按系统环境分目录
-│   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md（K8s 单机 master+node）、k8s-cluster.md（K8s 集群 master + node）
+│   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md + install-k8s-single.sh + k8s-install.env（K8s 单机）、k8s-cluster.md（K8s 集群）
 └── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
 ```
 

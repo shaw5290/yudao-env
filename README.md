@@ -27,7 +27,7 @@ yudao-env/
 │   ├── nora/auth/              # NORA 开启鉴权时的 users.htpasswd（不提交）
 │   └── tdengine/               # TDengine 建库说明
 ├── infra/                      # 基础环境安装配置，按系统环境分目录
-│   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md（K8s 单机 master+node）、k8s-cluster.md（K8s 集群 master + node）
+│   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md + install-k8s-single.sh + k8s-install.env（K8s 单机）、k8s-cluster.md（K8s 集群）
 └── backups/                    # 数据库备份输出目录（脚本自动生成）
 ```
 

@@ -1,0 +1,6 @@
+# ==================== 命名空间 ====================
+# 由 kustomization.yaml 引用；Argo CD / Flux 同步时与各服务一起创建
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yudao
