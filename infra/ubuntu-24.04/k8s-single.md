@@ -26,7 +26,7 @@
 - Pod 网段、Service 网段**不能**与服务器所在网段重叠；服务器内网是 `192.168.x.x` 时，把 Pod 网段换成 `10.244.0.0/16` 等其他私有网段（文档中的命令会按服务器 IP 自动选择；`kubeadm init` 的 `--pod-network-cidr` 和 `calico.yaml` 的 `CALICO_IPV4POOL_CIDR` 必须一致）。
 - **先赋值、再执行**：涉及 IP、镜像源的步骤都先给变量赋值并用 `echo` 确认，再执行后面的命令。变量只在当前终端有效，SSH 重连或新开窗口后要重新赋值，否则变量为空，命令会报错。
 - **国内 / 海外二选一**：镜像源分两套写法，按服务器位置只执行其中一个代码块。国内服务器访问不了 `registry.k8s.io`、Docker Hub（报 `i/o timeout`），必须用阿里云。
-- 文中 `10.0.0.10` 等 IP 只是示例，**不要原样复制**；也不要把 `<xxx>` 这类占位符原样粘贴进命令（bash 会把 `<` 当成重定向，报 `No such file or directory`）。
+- 文中 `10.0.0.10` 等 IP 只是示例，**不要原样复制**；`<Pod名>` 这类占位符要换成实际值再执行。
 - 全文用普通账号执行，需要 root 权限的命令都已加 `sudo`。写系统文件统一用 `sudo tee`（`sudo echo ... > 文件` 中的重定向不走 sudo，会报 Permission denied）。不要 `sudo -i` 切到 root 后再执行，否则 `$HOME`、`$USER` 会变成 root 的，kubectl 凭证会放错位置。
 - `kubectl` 不加 sudo：它读取的是当前账号的 `~/.kube/config`。
 - 和集群版的区别只有三处：hosts 只写本机；不需要 `kubeadm join`；初始化后要**去掉 control-plane 污点**，否则业务 Pod 调度不上来。
@@ -216,10 +216,9 @@ $DOCKER_MIRROR/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") sta
 
 ```bash
 cat /etc/apt/sources.list.d/docker.list
-gpg --show-keys /etc/apt/keyrings/docker.asc
 ```
 
-成功标准：源地址正确、系统代号为 `noble`、架构与本机一致；能打印出 Docker 公钥信息（发行方、指纹）。
+成功标准：源地址正确、系统代号为 `noble`、架构与本机一致。
 
 ### 2. 安装 containerd.io
 
@@ -306,7 +305,7 @@ EOF
 | `docker.1panel.live` | 1Panel 社区 |
 | `docker.xuanyuan.me` | 轩辕镜像 |
 
-`mirror.ccs.tencentyun.com`、`<ID>.mirror.aliyuncs.com` 等云厂商加速地址只能在对应云的服务器内网使用。某个地址失效时，从 `hosts.toml` 中删掉或调整顺序，`sudo systemctl restart containerd` 后生效。检查某个地址能否拉取镜像：
+某个地址失效时，从 `hosts.toml` 中删掉或调整顺序，`sudo systemctl restart containerd` 后生效。检查地址是否可用：
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 https://docker.m.daocloud.io/v2/
@@ -396,15 +395,13 @@ sudo crictl config --set runtime-endpoint=unix:///run/containerd/containerd.sock
 
 ```bash
 kubeadm version -o short
-kubectl version --client
-kubelet --version
 apt-mark showhold
 sudo crictl version
 # 验证 Docker Hub 镜像加速（DOCKER_HUB_MIRROR 为空时按第二节第 3 步重新赋值）
 sudo crictl pull $DOCKER_HUB_MIRROR/library/busybox:1.36
 ```
 
-成功标准：三个组件版本都是 `v1.36.2`；锁定列表包含 `containerd.io`、`cri-tools`、`kubeadm`、`kubectl`、`kubelet`；`crictl version` 能输出 containerd 的版本；`crictl pull` 输出 `Image is up to date for ...`。
+成功标准：kubeadm 版本为 `v1.36.2`；锁定列表包含 `containerd.io`、`cri-tools`、`kubeadm`、`kubectl`、`kubelet`；`crictl version` 能输出 containerd 的版本；`crictl pull` 输出 `Image is up to date for ...`。
 
 ## 四、初始化集群
 
@@ -562,7 +559,7 @@ grep "image:" calico.yaml | sort -u
 sudo crictl pull $DOCKER_HUB_MIRROR/calico/node:v3.29.4
 ```
 
-成功标准：`image:` 都是 `$DOCKER_HUB_MIRROR/calico/...`（国内为 `docker.m.daocloud.io/calico/...`）；`crictl pull` 输出 `Image is up to date for ...`。拉取失败时按第二节第 3 步换一个加速地址，重新给 `DOCKER_HUB_MIRROR` 赋值后，用 `sed -i "s#docker.m.daocloud.io/#$DOCKER_HUB_MIRROR/#g" calico.yaml` 替换（把旧地址换成新地址）。
+成功标准：`image:` 都是 `$DOCKER_HUB_MIRROR/calico/...`（国内为 `docker.m.daocloud.io/calico/...`）；`crictl pull` 输出 `Image is up to date for ...`。拉取失败时按第二节第 3 步换一个可用的加速地址。
 
 **4）部署**
 
@@ -586,23 +583,7 @@ kubectl get nodes
 
 ## 五、最终验证
 
-### 1. 节点与系统 Pod
-
-```bash
-kubectl get nodes -o wide
-kubectl get pods -n kube-system
-```
-
-成功标准：
-
-```text
-NAME         STATUS   ROLES                  AGE   VERSION   INTERNAL-IP   ...   OS-IMAGE             CONTAINER-RUNTIME
-k8s-master   Ready    control-plane,worker   10m   v1.36.2   10.0.0.10     ...   Ubuntu 24.04 LTS     containerd://x.x.x
-```
-
-节点 `Ready`、版本 `v1.36.2`；`kube-system` 下所有 Pod `Running`，没有 `CrashLoopBackOff`、`Error`。
-
-### 2. 调度、网络与 DNS 测试
+节点与系统 Pod 已在第四节第 6 步确认，这里验证调度、NodePort 和集群 DNS：
 
 ```bash
 echo $DOCKER_HUB_MIRROR      # 为空时按第二节第 3 步重新赋值
@@ -611,7 +592,6 @@ kubectl expose deployment test-nginx --port=80 --type=NodePort
 # 等待两个 Pod 就绪（比 get pods -w 直观，成功输出 successfully rolled out）
 kubectl rollout status deployment/test-nginx --timeout=120s
 kubectl get pods -o wide -l app=test-nginx
-kubectl get svc test-nginx                       # PORT(S) 列 80:3xxxx 中的 3xxxx 就是 NodePort
 
 NODE_IP=$(hostname -I | awk '{print $1}')      # 本机 IP，用于访问 NodePort
 curl -s http://$NODE_IP:$(kubectl get svc test-nginx -o jsonpath='{.spec.ports[0].nodePort}') | grep title
@@ -834,7 +814,7 @@ kubectl delete pod <Pod名> -n <命名空间>
 kubectl set image deployment/<Deployment名> <容器名>=$DOCKER_HUB_MIRROR/library/nginx -n <命名空间>
 ```
 
-`<容器名>` 用 `kubectl get deployment <Deployment名> -n <命名空间> -o jsonpath='{.spec.template.spec.containers[*].name}'` 查看。以第五节的 nginx 测试为例，容器名就是 `nginx`：
+以第五节的 nginx 测试为例（容器名 `nginx`）：
 
 ```bash
 kubectl set image deployment/test-nginx nginx=$DOCKER_HUB_MIRROR/library/nginx
@@ -845,7 +825,7 @@ kubectl get deployment test-nginx -o jsonpath='{.spec.template.spec.containers[0
 
 成功标准：`rollout status` 输出 `successfully rolled out`；Pod 名中间那段（ReplicaSet 哈希）变成新的、状态 `1/1 Running`；镜像为 `docker.m.daocloud.io/library/nginx`。
 
-更新过程中旧 Pod（名字里是旧的哈希）会短暂显示 `Completed` / `Terminating` 后消失，属于正常。用 `get pods -w` 观察时只会打印状态变化的行，容易只看到旧 Pod，用 `rollout status` 更直观。镜像仍是旧地址时，多半是执行 `set image` 时 `$DOCKER_HUB_MIRROR` 为空（换了终端），重新赋值后再执行。
+更新过程中旧 Pod 会短暂显示 `Completed` / `Terminating` 后消失，属于正常。镜像仍是旧地址时，多半是 `$DOCKER_HUB_MIRROR` 为空（换了终端），重新赋值后再执行。
 
 ### 扩展为集群
 
@@ -908,17 +888,7 @@ sudo kubeadm reset -f
 sudo rm -rf /etc/cni/net.d $HOME/.kube
 ```
 
-然后重新设置变量、执行 init。其他原因用 `sudo crictl ps -a` 看 etcd、kube-apiserver 是否在反复重启，再用 `sudo crictl logs <容器ID>` 看日志。
-
-### `sudo: crictl: command not found`
-
-原因：漏了第三节第 2 步中的 `cri-tools`（新版 kubeadm 不再依赖它，不会自动安装）。
-解决：`sudo apt install -y cri-tools`，再执行 `sudo crictl config --set runtime-endpoint=unix:///run/containerd/containerd.sock`。
-
-### 执行命令报 `-bash: 本机IP: No such file or directory`
-
-原因：把 `<本机IP>` 这类占位符原样粘贴进了命令，bash 把 `<` 当成了输入重定向。命令没有真正执行。
-解决：按文档先给变量赋值（如 `NODE_IP=$(hostname -I | awk '{print $1}')`），`echo` 确认后再执行引用 `$NODE_IP` 的命令。
+然后重新设置变量、执行 init。其他原因（如 `SystemdCgroup` 不是 `true`）用 `sudo crictl ps -a` 看 etcd、kube-apiserver 是否在反复重启，再用 `sudo crictl logs <容器ID>` 看日志。
 
 ### 业务 Pod 一直 Pending，事件提示 `untolerated taint {node-role.kubernetes.io/control-plane: }`
 
@@ -930,25 +900,10 @@ sudo rm -rf /etc/cni/net.d $HOME/.kube
 原因：单机资源不够，控制平面和中间件抢资源。
 解决：`kubectl describe node k8s-master` 查看 `Allocated resources`；停掉不用的中间件，或给服务器扩容。
 
-### `kubeadm init` 卡在 `[wait-control-plane]` 或报 kubelet 不健康
-
-原因：containerd 与 kubelet 的 cgroup 驱动不一致，或 pause / 控制平面镜像拉不下来。
-解决：`sudo journalctl -u kubelet -f` 看具体报错；确认 `/etc/containerd/config.toml` 中 `SystemdCgroup = true`、镜像地址可拉取，`sudo systemctl restart containerd` 后 `sudo kubeadm reset -f` 再重新 init。
-
 ### preflight 报 `[ERROR Swap]` / `[ERROR FileContent--proc-sys-net-bridge-bridge-nf-call-iptables]`
 
 原因：swap 未关闭，或 `br_netfilter` 模块未加载。
 解决：重新执行第一节第 3、4 步。
-
-### `kubeadm init` 报 `[ERROR IsPrivilegedUser]: user is not running as root`
-
-原因：kubeadm 命令没加 `sudo`。
-解决：`kubeadm init`、`kubeadm reset`、`kubeadm config images pull`、`kubeadm certs` 都要加 `sudo`。
-
-### 写配置文件报 `Permission denied`
-
-原因：用了 `sudo echo ... > /etc/xxx` 或 `sudo cat > /etc/xxx <<EOF`，重定向由当前账号的 shell 执行，没有 root 权限。
-解决：改成 `echo ... | sudo tee /etc/xxx > /dev/null`，追加用 `sudo tee -a`。
 
 ### kubectl 报 `connection to the server localhost:8080 was refused`
 
