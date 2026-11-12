@@ -31,7 +31,8 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:RELEASE.2025-09-07T16-13-09Z   # 固定版本：国内加速拒绝 latest 标签（403），且版本可追溯
+          image: minio/minio:latest
+          imagePullPolicy: IfNotPresent   # latest 默认每次拉取；加速源拒绝 minio:latest（403），先在节点上手动指定加速地址下载并打标签，见 README「节点镜像加速」
           args: ["server", "/data", "--console-address", ":9001"]
           ports:
             - containerPort: 9000

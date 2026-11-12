@@ -8,7 +8,7 @@
 | redis | `redis:7` | 6379 | 无（不持久化） |
 | nacos | `nacos/nacos-server:v3.0.3` | 8848、8080（控制台）、9848、9849 | `nacos-data`、`nacos-logs`、`nacos-plugins` |
 | rabbitmq | `rabbitmq:4.1-management` | 5672、15672（管理控制台） | `rabbitmq-data` 2Gi |
-| minio | `minio/minio:RELEASE.2025-09-07T16-13-09Z` | 9000、9001（控制台） | `minio-data` 5Gi |
+| minio | `minio/minio:latest`（节点上手动导入，见常见问题） | 9000、9001（控制台） | `minio-data` 5Gi |
 | lgtm | `grafana/otel-lgtm:0.37.0` | 3000（Grafana）、4317、4318 | `lgtm-data` 5Gi |
 | nora | `ghcr.io/getnora-io/nora:1.4.4` | 4000 | `nora-data` 20Gi |
 
@@ -289,6 +289,22 @@ kubectl --context kubernetes-admin@kubernetes -n yudao describe secret yudao-env
 原因：镜像拉取失败。服务器配置的 Docker Hub 加速只对 Docker Hub 镜像生效，加速地址也可能没有缓存某个标签。
 
 解决：`describe pod` 查看 Events 中的具体报错，换可用的加速地址或在清单中改为可拉取的固定版本。
+
+**minio**：清单用 `minio/minio:latest` + `imagePullPolicy: IfNotPresent`（节点上已有就不再拉取）。DaoCloud、1Panel 都拒绝拉取 `minio/minio:latest`（403），官方地址国内不通，所以部署前在节点上手动指定加速地址下载固定版本（1Panel 可以拉），再打成 `docker.io/minio/minio:latest`：
+
+```bash
+sudo crictl pull docker.1panel.live/minio/minio:RELEASE.2025-09-07T16-13-09Z
+sudo ctr -n k8s.io images tag --force docker.1panel.live/minio/minio:RELEASE.2025-09-07T16-13-09Z docker.io/minio/minio:latest
+sudo crictl images
+```
+
+成功标准：`crictl images` 中有 `docker.io/minio/minio`、标签 `latest`。之后 `kubectl --context kubernetes-admin@kubernetes -n yudao rollout restart deployment/minio`。更新 minio 时换成新的版本号重复上面两步；多节点集群每个节点都要执行。
+
+### minio 反复重启，日志 `Invalid credentials`
+
+原因：`MINIO_ROOT_USER` 少于 3 位或 `MINIO_ROOT_PASSWORD` 少于 8 位，日志为 `FATAL Unable to validate credentials ... MINIO_ROOT_PASSWORD length at least 8 characters`。
+
+解决：修改 `.env` 中的口令，按第 4 步删除并重建 Secret，再 `kubectl --context kubernetes-admin@kubernetes -n yudao rollout restart deployment/minio`；本机 `gitops-k8s/.env` 同步修改，后端 yudao-cloud 连接 MinIO 的口令也一起改。
 
 ### RabbitMQ 账号密码不生效
 
