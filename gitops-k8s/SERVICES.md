@@ -28,7 +28,7 @@
 | Redis | 无（只有密码） | `REDIS_PASSWORD`（为空表示不设密码） | `redis://192.168.31.66:6379`，database 默认 0 |
 | Nacos | 鉴权关闭时无需登录（`NACOS_AUTH_ENABLE=false`） | 开启鉴权后为控制台首次设置的 `nacos` 用户口令 | 服务地址 `192.168.31.66:8848`（控制台见上表）；内置存储（Derby），命名空间、配置需在控制台自行创建 |
 | RabbitMQ | `RABBITMQ_DEFAULT_USER`（模板默认 `guest`） | `RABBITMQ_DEFAULT_PASS` | `amqp://<账号>:<口令>@192.168.31.66:5672/`，vhost `/`；账号只在数据卷首次初始化时生效 |
-| MinIO | `MINIO_ROOT_USER`（模板默认 `minioadmin`） | `MINIO_ROOT_PASSWORD`（至少 8 位） | S3 endpoint [http://192.168.31.66:9000](http://192.168.31.66:9000)，access key / secret key 即账号 / 口令；bucket 需在控制台创建 |
+| MinIO | `MINIO_ROOT_USER`（模板默认 `minioadmin`） | `MINIO_ROOT_PASSWORD`（至少 8 位） | S3 endpoint [http://192.168.31.66:9000](http://192.168.31.66:9000)，access key / secret key 即账号 / 口令；桶需手动创建一次：yudao-cloud 默认用 `yudao`（匿名可下载），命令见 README 常见问题「minio 默认桶」 |
 | Grafana LGTM | 镜像默认 `admin`（以实际登录页为准） | 镜像默认 `admin`，首次登录后修改 | OTLP 上报：gRPC `http://192.168.31.66:4317`、HTTP [http://192.168.31.66:4318](http://192.168.31.66:4318) |
 | NORA | 无（不开鉴权，任何人可读写） | — | Docker `192.168.31.66:4000`（HTTP，客户端需配置 insecure registry）、Maven [http://192.168.31.66:4000/maven2/](http://192.168.31.66:4000/maven2/)、npm [http://192.168.31.66:4000/npm/](http://192.168.31.66:4000/npm/) |
 

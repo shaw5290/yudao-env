@@ -325,6 +325,19 @@ sudo crictl images
 
 成功标准：`crictl images` 中有 `docker.io/minio/minio`、标签 `latest`。之后 `kubectl --context kubernetes-admin@kubernetes -n yudao rollout restart deployment/minio`。更新 minio 时换成新的版本号重复上面两步；多节点集群每个节点都要执行。
 
+### minio 默认桶
+
+官方 `minio/minio` 镜像不支持启动时自动建桶（`MINIO_DEFAULT_BUCKETS` 只有 bitnami 镜像支持），首次部署后用镜像自带的 `mc` 手动创建一次。yudao-cloud 默认 MinIO 文件配置用桶 `yudao`，按 domain/对象名 直接访问文件，需设为匿名可下载：
+
+```bash
+kubectl --context kubernetes-admin@kubernetes -n yudao exec deploy/minio -- sh -c 'mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"'
+kubectl --context kubernetes-admin@kubernetes -n yudao exec deploy/minio -- mc mb --ignore-existing local/yudao
+kubectl --context kubernetes-admin@kubernetes -n yudao exec deploy/minio -- mc anonymous set download local/yudao
+kubectl --context kubernetes-admin@kubernetes -n yudao exec deploy/minio -- mc ls local
+```
+
+成功标准：`mc ls local` 列出 `yudao/`。桶保存在 `minio-data` PVC 中，Pod 重建不会丢失，只需执行一次；也可以在控制台 `http://<服务器IP>:9001` 中创建。
+
 ### minio 反复重启，日志 `Invalid credentials`
 
 原因：`MINIO_ROOT_USER` 少于 3 位或 `MINIO_ROOT_PASSWORD` 少于 8 位，日志为 `FATAL Unable to validate credentials ... MINIO_ROOT_PASSWORD length at least 8 characters`。
