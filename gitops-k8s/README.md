@@ -212,6 +212,29 @@ kubectl --context kubernetes-admin@kubernetes scale deployment/nacos -n yudao --
 
 执行 `apply -k .` 会把副本数恢复为 1，停止的服务会被重新启动。
 
+### 资源占用（内存排序）
+
+kubeadm 集群默认没有 metrics-server，`kubectl top` 不可用，用 containerd 和系统命令查看（在服务器上执行）：
+
+```bash
+# 按容器：MEM 列为内存，从大到小（第一行保留表头）
+sudo crictl stats -a | awk 'NR==1; NR>1 {print | "sort -k4 -h -r"}'
+# 容器 ID 对应的服务名（POD 列）
+sudo crictl ps -o table
+# 按进程：RSS 为实际占用的物理内存（KB），从大到小前 15 个（含 kubelet、containerd 等容器外进程）
+ps -eo pid,rss,comm --sort=-rss | head -15
+# 整机内存
+free -h
+```
+
+装了 metrics-server 后也可以用：`kubectl --context kubernetes-admin@kubernetes -n yudao top pods --sort-by=memory`（报 `Metrics API not available` 即未安装）。
+
+各容器 MEM 之和比 `free` 的 `used` 小是正常的：`crictl stats` 只统计容器的工作集，不含 kubelet、containerd、containerd-shim、系统进程和内核占用；`crictl` 的 MB 是 10^6 字节，`free` 默认是 KiB。`buff/cache` 是文件缓存（镜像、数据卷），需要时自动释放，剩余内存看 `available`。
+
+列表中的 `nginx`、`busybox` 等不属于本目录的容器，多是安装 K8s 时验证用的 `test-nginx`、`dns-test` 未删除，用 `kubectl --context kubernetes-admin@kubernetes get pods -A` 确认后删除。
+
+内存占用较多的通常是 nacos（JVM 堆在 `services/nacos.yaml` 的 `JVM_XMS` / `JVM_XMX`，当前 256m）、rabbitmq、lgtm。
+
 ### 删除
 
 ```bash
@@ -305,6 +328,12 @@ sudo crictl images
 原因：`MINIO_ROOT_USER` 少于 3 位或 `MINIO_ROOT_PASSWORD` 少于 8 位，日志为 `FATAL Unable to validate credentials ... MINIO_ROOT_PASSWORD length at least 8 characters`。
 
 解决：修改 `.env` 中的口令，按第 4 步删除并重建 Secret，再 `kubectl --context kubernetes-admin@kubernetes -n yudao rollout restart deployment/minio`；本机 `gitops-k8s/.env` 同步修改，后端 yudao-cloud 连接 MinIO 的口令也一起改。
+
+### nacos 反复重启，日志最后是 `Graceful shutdown complete`
+
+原因：不是 nacos 崩溃，而是被存活探针杀掉（Events 中有 `Container nacos failed liveness probe, will be restarted`）。nacos 3 的控制台在 8080、context path 为 `/`，`8080/nacos/actuator/health` 返回 500 / 拒绝连接；用内置存储时启动约 80 秒。日志中大量 `InterruptedException` 是关闭时线程被中断，可忽略。
+
+解决：`services/nacos.yaml` 的探针用 TCP 检查 8848，并用 `startupProbe` 给启动留 5 分钟。确认服务器上的文件已更新：`grep -c tcpSocket services/nacos.yaml` 输出 `3`，再 `apply -k .`。
 
 ### RabbitMQ 账号密码不生效
 
