@@ -23,7 +23,7 @@
 |---|---|---|---|
 | master + node | `k8s-master` | `10.0.0.10`（自动获取，见下文 `NODE_IP`） | 最低 4C8G、100G 磁盘；yudao 中间件全开建议 8C16G 以上 |
 
-- Pod 网段、Service 网段**不能**与服务器所在网段重叠；服务器内网是 `192.168.x.x` 时，把 Pod 网段换成 `10.244.0.0/16` 等其他私有网段（`kubeadm init` 的 `--pod-network-cidr` 改成同一个值即可，Calico 会自动识别）。
+- Pod 网段、Service 网段**不能**与服务器所在网段重叠；服务器内网是 `192.168.x.x` 时，把 Pod 网段换成 `10.244.0.0/16` 等其他私有网段（文档中的命令会按服务器 IP 自动选择；`kubeadm init` 的 `--pod-network-cidr` 和 `calico.yaml` 的 `CALICO_IPV4POOL_CIDR` 必须一致）。
 - **先赋值、再执行**：涉及 IP、镜像源的步骤都先给变量赋值并用 `echo` 确认，再执行后面的命令。变量只在当前终端有效，SSH 重连或新开窗口后要重新赋值，否则变量为空，命令会报错。
 - **国内 / 海外二选一**：镜像源分两套写法，按服务器位置只执行其中一个代码块。国内服务器访问不了 `registry.k8s.io`、Docker Hub（报 `i/o timeout`），必须用阿里云。
 - 文中 `10.0.0.10` 等 IP 只是示例，**不要原样复制**；也不要把 `<xxx>` 这类占位符原样粘贴进命令（bash 会把 `<` 当成重定向，报 `No such file or directory`）。
@@ -33,7 +33,58 @@
 
 ## 一、系统前置配置
 
-### 1. 关闭 Swap（K8s 强制要求）
+### 1. 更新软件源与系统
+
+国内服务器先把 Ubuntu 源换成阿里云（海外服务器跳过这一段）。Ubuntu 24.04 的源配置在 `/etc/apt/sources.list.d/ubuntu.sources`（不再是 `/etc/apt/sources.list`）：
+
+```bash
+sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.bak
+sudo sed -i 's#http://\(archive\|security\).ubuntu.com#https://mirrors.aliyun.com#g' /etc/apt/sources.list.d/ubuntu.sources
+```
+
+更新软件包列表和系统：
+
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+成功标准：`apt update` 无报错。
+
+### 2. 安装基础工具
+
+按最小化安装的 Ubuntu 考虑，后续步骤用到的工具在这里一次装好：
+
+```bash
+sudo apt install -y \
+  ca-certificates curl gnupg apt-transport-https \
+  chrony ufw iputils-ping iproute2 \
+  conntrack socat ethtool ebtables iptables \
+  vim git openssh-client
+```
+
+| 工具 | 用途 |
+|---|---|
+| `ca-certificates`、`curl`、`gnupg`、`apt-transport-https` | 下载 GPG 密钥、添加 Docker / K8s 软件源、下载 `calico.yaml` |
+| `chrony` | 时间同步 |
+| `ufw` | 防火墙（本地部署保持关闭，装上便于确认状态） |
+| `iputils-ping`、`iproute2` | `ping` 校验 hosts，`ip` 查本机 IP |
+| `conntrack`、`socat`、`ethtool`、`ebtables`、`iptables` | kubelet / kube-proxy 运行依赖，kubeadm 预检会检查 |
+| `vim` | 修改配置文件 |
+| `git`、`openssh-client` | 拉取本仓库、`scp` 复制凭证 |
+
+`crictl`（`cri-tools`）和 `ctr` 不在这里装：`cri-tools` 在 K8s 软件源里，第三节添加源后与 kubeadm 一起安装；`ctr` 随 `containerd.io` 一起安装。
+
+校验：
+
+```bash
+for c in curl gpg chronyc ufw ping ip conntrack socat iptables vim git scp; do
+  command -v $c > /dev/null && echo "OK  $c" || echo "缺少 $c"
+done
+```
+
+成功标准：全部输出 `OK`，没有 `缺少`。
+
+### 3. 关闭 Swap（K8s 强制要求）
 
 ```bash
 # 临时关闭
@@ -50,7 +101,7 @@ cat /proc/swaps
 
 成功标准：只有表头，没有 swap 挂载行。
 
-### 2. 加载内核模块、开启 IP 转发
+### 4. 加载内核模块、开启 IP 转发
 
 ```bash
 # 开机自动加载
@@ -79,7 +130,7 @@ sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables ne
 
 成功标准：两个模块都已加载，三个参数都为 `1`。
 
-### 3. 主机名与 hosts 解析
+### 5. 主机名与 hosts 解析
 
 ```bash
 sudo hostnamectl set-hostname k8s-master
@@ -105,14 +156,12 @@ ping -c 2 k8s-master
 
 成功标准：`hostname` 输出 `k8s-master`；hosts 中有映射，解析到的是本机 IP（不是 `127.0.1.1`）。
 
-### 4. 时间同步与防火墙
+### 6. 时间同步与防火墙
 
 ```bash
-sudo apt update
-sudo apt install -y chrony ufw
 sudo systemctl enable --now chrony
 
-# 本地部署不启用防火墙（最小化安装的 Ubuntu 没有 ufw，上面一并安装，保持关闭）
+# 本地部署不启用防火墙（ufw 已在第 2 步安装，保持关闭）
 sudo ufw disable
 ```
 
@@ -126,22 +175,6 @@ sudo ufw status
 成功标准：chrony 有参考时钟、偏差在毫秒级；ufw 为 `Status: inactive`。
 
 本地部署不开防火墙，服务器**只能放在内网**。要暴露到公网时，用云厂商安全组只放行必要端口（SSH、6443、需要访问的 yudao 服务端口），并限制来源 IP。
-
-### 5. （可选）更新系统软件包
-
-```bash
-sudo apt update && sudo apt upgrade -y
-```
-
-Ubuntu 24.04 的源配置在 `/etc/apt/sources.list.d/ubuntu.sources`（不再是 `/etc/apt/sources.list`）。国内服务器可以把其中的 `archive.ubuntu.com`、`security.ubuntu.com` 换成 `mirrors.aliyun.com`：
-
-```bash
-sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources.bak
-sudo sed -i 's#http://\(archive\|security\).ubuntu.com#https://mirrors.aliyun.com#g' /etc/apt/sources.list.d/ubuntu.sources
-sudo apt update
-```
-
-成功标准：`apt update` 无报错。
 
 ## 二、安装 containerd
 
@@ -170,7 +203,6 @@ echo $DOCKER_MIRROR
 添加源：
 
 ```bash
-sudo apt install -y ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL $DOCKER_MIRROR/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -221,6 +253,67 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 sudo sed -i 's#registry.k8s.io/pause#registry.aliyuncs.com/google_containers/pause#' /etc/containerd/config.toml
 ```
 
+**仅国内服务器**：给 Docker Hub（docker.io）配置国内镜像加速。Calico、nginx、busybox 以及 yudao 各服务（mysql、redis 等）的镜像都在 Docker Hub，国内直接访问官方地址超时或被限流。
+
+先设置后续步骤使用的加速地址变量（二选一）。国内服务器：
+
+```bash
+DOCKER_HUB_MIRROR=docker.m.daocloud.io
+```
+
+海外服务器（可以直接访问 Docker Hub，跳过下面的 containerd 配置）：
+
+```bash
+DOCKER_HUB_MIRROR=docker.io
+```
+
+确认变量（第三 ~ 五节的拉取测试、Calico、nginx 都会用到；换了终端要重新赋值）：
+
+```bash
+echo $DOCKER_HUB_MIRROR
+```
+
+国内服务器配置 containerd：所有 `docker.io/...` 镜像依次尝试下面几个国内地址，**不回落到 Docker 官方地址**。清单里没写仓库前缀的镜像（如 `mysql:8.0.21`）也走这里。
+
+```bash
+# 让 containerd 读取 /etc/containerd/certs.d 下的镜像仓库配置（默认配置中有两处 config_path = ''，都改）
+sudo sed -i "s#config_path = ''#config_path = '/etc/containerd/certs.d'#" /etc/containerd/config.toml
+
+sudo mkdir -p /etc/containerd/certs.d/docker.io
+sudo tee /etc/containerd/certs.d/docker.io/hosts.toml > /dev/null <<'EOF'
+server = "https://docker.m.daocloud.io"
+
+[host."https://docker.m.daocloud.io"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.1ms.run"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.1panel.live"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.xuanyuan.me"]
+  capabilities = ["pull", "resolve"]
+EOF
+```
+
+上面的地址 2026-11-12 实测可用（都是第三方公益服务，可能限流或下线）：
+
+| 地址 | 提供方 |
+|---|---|
+| `docker.m.daocloud.io` | DaoCloud |
+| `docker.1ms.run` | 毫秒镜像 |
+| `docker.1panel.live` | 1Panel 社区 |
+| `docker.xuanyuan.me` | 轩辕镜像 |
+
+`mirror.ccs.tencentyun.com`、`<ID>.mirror.aliyuncs.com` 等云厂商加速地址只能在对应云的服务器内网使用。某个地址失效时，从 `hosts.toml` 中删掉或调整顺序，`sudo systemctl restart containerd` 后生效。检查某个地址能否拉取镜像：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 https://docker.m.daocloud.io/v2/
+```
+
+返回 `200` 或 `401` 说明服务在线（`401` 是正常的鉴权提示）；超时、`429`（限流）、`5xx` 说明不可用。
+
 重启生效：
 
 ```bash
@@ -233,9 +326,12 @@ sudo systemctl enable containerd
 ```bash
 grep -n SystemdCgroup /etc/containerd/config.toml
 grep -n pause /etc/containerd/config.toml
+# 以下两条仅国内服务器
+grep -n "config_path" /etc/containerd/config.toml
+cat /etc/containerd/certs.d/docker.io/hosts.toml
 ```
 
-成功标准：输出 `SystemdCgroup = true`；国内服务器的 pause 镜像为 `registry.aliyuncs.com/google_containers/pause:x.x`。如果没有 `SystemdCgroup` 这一行（部分 containerd 2.x 的默认配置不带），用 `sudo vi /etc/containerd/config.toml` 在 runc 的 `options` 段手动加上 `SystemdCgroup = true`，再 `sudo systemctl restart containerd`。
+成功标准：输出 `SystemdCgroup = true`；国内服务器的 pause 镜像为 `registry.aliyuncs.com/google_containers/pause:x.x`，两处 `config_path` 都是 `'/etc/containerd/certs.d'`（`plugin_config_path` 那行不用管），`hosts.toml` 内容与上面一致。如果没有 `SystemdCgroup` 这一行（部分 containerd 2.x 的默认配置不带），用 `sudo vi /etc/containerd/config.toml` 在 runc 的 `options` 段手动加上 `SystemdCgroup = true`，再 `sudo systemctl restart containerd`。
 
 ## 三、安装 kubeadm、kubelet、kubectl
 
@@ -262,7 +358,6 @@ echo $K8S_MIRROR
 添加源：
 
 ```bash
-sudo apt install -y apt-transport-https ca-certificates curl gpg
 sudo mkdir -p -m 755 /etc/apt/keyrings
 curl -fsSL $K8S_MIRROR/v1.36/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] $K8S_MIRROR/v1.36/deb/ /" \
@@ -305,9 +400,11 @@ kubectl version --client
 kubelet --version
 apt-mark showhold
 sudo crictl version
+# 验证 Docker Hub 镜像加速（DOCKER_HUB_MIRROR 为空时按第二节第 3 步重新赋值）
+sudo crictl pull $DOCKER_HUB_MIRROR/library/busybox:1.36
 ```
 
-成功标准：三个组件版本都是 `v1.36.2`；锁定列表包含 `containerd.io`、`cri-tools`、`kubeadm`、`kubectl`、`kubelet`；`crictl version` 能输出 containerd 的版本。
+成功标准：三个组件版本都是 `v1.36.2`；锁定列表包含 `containerd.io`、`cri-tools`、`kubeadm`、`kubectl`、`kubelet`；`crictl version` 能输出 containerd 的版本；`crictl pull` 输出 `Image is up to date for ...`。
 
 ## 四、初始化集群
 
@@ -416,12 +513,64 @@ kubectl label node k8s-master node-role.kubernetes.io/worker=
 
 ### 6. 部署 Calico 网络插件
 
+国内服务器要注意：`raw.githubusercontent.com` 可能下载不了；Calico 镜像在 Docker Hub，要换成第二节第 3 步的加速地址。所以先下载清单、改网段、换镜像地址并试拉，确认没问题再 apply。
+
+**1）下载 calico.yaml**
+
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.4/manifests/calico.yaml
+cd ~
+curl -fsSLO https://raw.githubusercontent.com/projectcalico/calico/v3.29.4/manifests/calico.yaml
+ls -lh calico.yaml
 ```
 
-- Calico 镜像在 `docker.io` / `quay.io`，国内服务器大概率拉取失败（Pod 卡在 `ImagePullBackOff`），此时替换 `calico.yaml` 中的镜像地址，或用 `sudo ctr -n k8s.io images import <镜像包>.tar` 导入离线镜像。
-- 服务器有多块网卡时，Calico 可能选错网卡，在 `calico-node` 的环境变量中加 `IP_AUTODETECTION_METHOD=interface=eth0`（换成内网网卡名）。
+成功标准：文件存在，大小为几百 KB（不是 0 字节，打开不是 HTML 报错页）。
+
+下载超时时，在能访问 GitHub 的开发机上下载，再传到服务器：
+
+```bash
+# 开发机上执行：改成服务器的登录账号和 IP
+SERVER_USER=k8s
+SERVER_IP=10.0.0.10
+curl -fsSLO https://raw.githubusercontent.com/projectcalico/calico/v3.29.4/manifests/calico.yaml
+scp calico.yaml $SERVER_USER@$SERVER_IP:~/
+```
+
+**2）Pod 网段写入清单**
+
+把 `CALICO_IPV4POOL_CIDR` 显式设成与 `kubeadm init` 的 `--pod-network-cidr` 相同的值（不依赖 Calico 自动识别，Pod 网段为 `10.244.0.0/16` 时尤其要改）：
+
+```bash
+echo $POD_CIDR      # 为空说明换了终端，按第 1 步重新设置变量
+sed -i -e 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' \
+       -e "s|#   value: \"192.168.0.0/16\"|  value: \"$POD_CIDR\"|" calico.yaml
+grep -n -A1 "CALICO_IPV4POOL_CIDR" calico.yaml
+```
+
+成功标准：输出的两行前面都没有 `#`，值与 `$POD_CIDR` 一致：
+
+```text
+- name: CALICO_IPV4POOL_CIDR
+  value: "10.244.0.0/16"
+```
+
+**3）镜像地址换成加速地址，并试拉**
+
+```bash
+echo $DOCKER_HUB_MIRROR      # 为空时按第二节第 3 步重新赋值
+sed -i "s#docker.io/#$DOCKER_HUB_MIRROR/#g" calico.yaml
+grep "image:" calico.yaml | sort -u
+sudo crictl pull $DOCKER_HUB_MIRROR/calico/node:v3.29.4
+```
+
+成功标准：`image:` 都是 `$DOCKER_HUB_MIRROR/calico/...`（国内为 `docker.m.daocloud.io/calico/...`）；`crictl pull` 输出 `Image is up to date for ...`。拉取失败时按第二节第 3 步换一个加速地址，重新给 `DOCKER_HUB_MIRROR` 赋值后，用 `sed -i "s#docker.m.daocloud.io/#$DOCKER_HUB_MIRROR/#g" calico.yaml` 替换（把旧地址换成新地址）。
+
+**4）部署**
+
+```bash
+kubectl apply -f calico.yaml
+```
+
+- 服务器有多块网卡时，Calico 可能选错网卡，在 `calico-node` 的环境变量中加 `IP_AUTODETECTION_METHOD=interface=eth0`（换成内网的网卡名）。
 - 升级 Calico 前到 <https://github.com/projectcalico/calico/releases> 确认与当前 K8s 版本兼容。
 
 校验：
@@ -430,6 +579,8 @@ kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.4/
 kubectl get pods -n kube-system -w      # Ctrl+C 退出
 kubectl get nodes
 ```
+
+第一次部署要拉镜像，`calico-node` 停在 `Init:0/3` 一两分钟属于正常，之后依次经过 `Init:1/3`、`Init:2/3`、`PodInitializing`、`Running`；calico-node 就绪后 `calico-kube-controllers`、`coredns` 才从 `Pending` 开始创建。超过 3 分钟仍是 `Init:0/3` 时，用 `kubectl describe pod -n kube-system -l k8s-app=calico-node | tail -15` 查看是否拉镜像失败。
 
 成功标准：`calico-node`、`calico-kube-controllers`、`coredns` 全部 `Running`；`k8s-master` 变为 `Ready`。
 
@@ -454,27 +605,57 @@ k8s-master   Ready    control-plane,worker   10m   v1.36.2   10.0.0.10     ...  
 ### 2. 调度、网络与 DNS 测试
 
 ```bash
-kubectl create deployment test-nginx --image=nginx --replicas=2
+echo $DOCKER_HUB_MIRROR      # 为空时按第二节第 3 步重新赋值
+kubectl create deployment test-nginx --image=$DOCKER_HUB_MIRROR/library/nginx --replicas=2
 kubectl expose deployment test-nginx --port=80 --type=NodePort
+# 等待两个 Pod 就绪（比 get pods -w 直观，成功输出 successfully rolled out）
+kubectl rollout status deployment/test-nginx --timeout=120s
 kubectl get pods -o wide -l app=test-nginx
 kubectl get svc test-nginx                       # PORT(S) 列 80:3xxxx 中的 3xxxx 就是 NodePort
-curl http://$NODE_IP:$(kubectl get svc test-nginx -o jsonpath='{.spec.ports[0].nodePort}')
 
-kubectl run dns-test --rm -it --image=busybox:1.36 --restart=Never -- nslookup kubernetes.default
+NODE_IP=$(hostname -I | awk '{print $1}')      # 本机 IP，用于访问 NodePort
+curl -s http://$NODE_IP:$(kubectl get svc test-nginx -o jsonpath='{.spec.ports[0].nodePort}') | grep title
+
+# DNS 测试（不用 -it：第一次要拉镜像，交互模式会一直等待像卡住一样，Ctrl+C 后 Pod 还会残留）
+kubectl delete pod dns-test --ignore-not-found
+# 用完整域名：busybox 新版 nslookup 不使用 search 域，查短名 kubernetes.default 会报 NXDOMAIN
+kubectl run dns-test --image=$DOCKER_HUB_MIRROR/library/busybox:1.36 --restart=Never -- nslookup kubernetes.default.svc.cluster.local
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/dns-test --timeout=60s
+kubectl logs dns-test
+kubectl delete pod dns-test
 
 # 清理
 kubectl delete svc,deployment test-nginx
 ```
 
-成功标准：两个 nginx Pod 都 `Running` 并调度到 `k8s-master`（一直 `Pending` 说明污点没去掉，回到第四节第 5 步）；`curl` 返回 nginx 欢迎页（`Welcome to nginx!`；`NODE_IP` 为空时先按第四节第 1 步赋值）；`nslookup` 能解析出 `kubernetes.default` 的地址。
+成功标准：两个 nginx Pod 都 `Running` 并调度到 `k8s-master`（一直 `Pending` 说明污点没去掉，回到第四节第 5 步）；`rollout status` 输出 `successfully rolled out`；`curl` 输出 `<title>Welcome to nginx!</title>`；`kubectl logs dns-test` 输出 `Name: kubernetes.default.svc.cluster.local` 和 `Address: 10.96.0.1`。
 
 ## 六、默认 StorageClass
 
 本仓库的清单用 PVC 存数据，并依赖**默认 StorageClass**（Docker Desktop 自带，kubeadm 集群没有）。单机用 local-path-provisioner 正合适，数据存在本机 `/opt/local-path-provisioner`：
 
+下载清单（下载超时时和 `calico.yaml` 一样，在开发机上下载后 `scp` 过来）：
+
 ```bash
 LOCAL_PATH_VERSION=v0.0.32   # 到 https://github.com/rancher/local-path-provisioner/releases 确认版本
-kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/$LOCAL_PATH_VERSION/deploy/local-path-storage.yaml
+cd ~
+curl -fsSLO https://raw.githubusercontent.com/rancher/local-path-provisioner/$LOCAL_PATH_VERSION/deploy/local-path-storage.yaml
+```
+
+镜像（`rancher/local-path-provisioner`、辅助 Pod 用的 `busybox`）换成加速地址：
+
+```bash
+echo $DOCKER_HUB_MIRROR      # 为空时按第二节第 3 步重新赋值
+sed -i -e "s#image: rancher/#image: $DOCKER_HUB_MIRROR/rancher/#" \
+       -e "s#image: busybox#image: $DOCKER_HUB_MIRROR/library/busybox#" local-path-storage.yaml
+grep -n "image:" local-path-storage.yaml
+```
+
+确认两处 `image:` 都以 `$DOCKER_HUB_MIRROR/` 开头后部署，并设为默认：
+
+```bash
+kubectl apply -f local-path-storage.yaml
+kubectl -n local-path-storage rollout status deployment/local-path-provisioner --timeout=120s
 kubectl patch storageclass local-path -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 ```
 
@@ -484,7 +665,62 @@ kubectl patch storageclass local-path -p '{"metadata":{"annotations":{"storagecl
 kubectl get storageclass
 ```
 
-成功标准：`local-path` 后面带 `(default)`。
+成功标准：`rollout status` 输出 `successfully rolled out`；`local-path` 后面带 `(default)`。`rollout status` 超时时，用 `kubectl -n local-path-storage describe pod | tail -10` 查看是否拉镜像失败（`image:` 没换成加速地址）。
+
+验证能创建存储卷。`VOLUMEBINDINGMODE` 是 `WaitForFirstConsumer`，PVC 要等有 Pod 使用时才会真正创建，所以用一个 Pod 来测。先把测试清单写成文件（`EOF` 不加引号，`$DOCKER_HUB_MIRROR` 会被替换成实际地址），确认后再 apply：
+
+```bash
+echo $DOCKER_HUB_MIRROR      # 为空时按第二节第 3 步重新赋值
+cat > ~/test-pvc.yaml <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pvc-pod
+spec:
+  containers:
+    - name: busybox
+      image: $DOCKER_HUB_MIRROR/library/busybox:1.36
+      command: ["sh", "-c", "echo ok > /data/test && sleep 3600"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: test-pvc
+EOF
+grep image ~/test-pvc.yaml
+```
+
+确认 `image:` 是加速地址（国内为 `docker.m.daocloud.io/library/busybox:1.36`）后创建：
+
+```bash
+kubectl apply -f ~/test-pvc.yaml
+kubectl wait --for=condition=Ready pod/test-pvc-pod --timeout=120s
+kubectl get pvc test-pvc
+sudo ls /opt/local-path-provisioner/
+```
+
+成功标准：`wait` 输出 `condition met`；PVC 的 `STATUS` 为 `Bound`；`sudo ls /opt/local-path-provisioner/` 能看到 `pvc-xxxx_default_test-pvc` 目录。
+
+清理（删除 PVC 后，local-path 会自动删除对应目录）：
+
+```bash
+kubectl delete -f ~/test-pvc.yaml
+rm ~/test-pvc.yaml
+```
+
+PVC 一直 `Pending`：`kubectl describe pvc test-pvc` 查看事件；`no persistent volumes available` / 没有 provisioner 相关事件时，检查 `local-path` 是否为 `(default)`、`local-path-provisioner` Pod 是否 `Running`。
 
 有数据盘时，可以把数据目录改到数据盘：编辑 `local-path-storage` 命名空间中的 ConfigMap `local-path-config`，把 `paths` 改成如 `["/data/local-path-provisioner"]`（`kubectl -n local-path-storage edit configmap local-path-config`），只影响之后新建的 PVC。
 
@@ -533,6 +769,83 @@ export K8S_CONTEXT=yudao-k8s
 | 资源 | 所有服务 | 控制平面自身约占 1C2G；中间件全开内存吃紧时只启动需要的服务，`kubectl top` 需要另装 metrics-server |
 
 ## 八、运维操作
+
+### 补配 / 更换 Docker Hub 加速地址
+
+集群装好后才发现 Docker Hub 镜像拉不下来（Pod `ImagePullBackOff`），或者某个加速地址失效需要更换时，按下面的步骤处理（服务器上执行第 1~3 步）。
+
+**1. 确认 containerd 读取 certs.d**
+
+```bash
+grep -n "config_path" /etc/containerd/config.toml
+```
+
+两处 `config_path` 是 `''` 时先改：
+
+```bash
+sudo sed -i "s#config_path = ''#config_path = '/etc/containerd/certs.d'#" /etc/containerd/config.toml
+```
+
+**2. 写入（或修改）加速地址并重启 containerd**
+
+```bash
+sudo mkdir -p /etc/containerd/certs.d/docker.io
+sudo tee /etc/containerd/certs.d/docker.io/hosts.toml > /dev/null <<'EOF'
+server = "https://docker.m.daocloud.io"
+
+[host."https://docker.m.daocloud.io"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.1ms.run"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.1panel.live"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://docker.xuanyuan.me"]
+  capabilities = ["pull", "resolve"]
+EOF
+sudo systemctl restart containerd
+systemctl is-active containerd
+```
+
+重启 containerd 不影响已经在运行的 Pod；`kubectl` 短暂连不上时等十几秒即可。
+
+**3. 用加速地址试拉**
+
+```bash
+DOCKER_HUB_MIRROR=docker.m.daocloud.io
+sudo crictl pull $DOCKER_HUB_MIRROR/library/nginx:latest
+```
+
+成功标准：输出 `Image is up to date for ...`。失败时用第二节第 3 步的 `curl` 命令检查地址，换成可用的地址后回到第 2 步。
+
+**4. 让拉取失败的 Pod 重新拉取（在 master 上执行）**
+
+镜像地址已经是 `$DOCKER_HUB_MIRROR/...` 的，删除 Pod 让控制器重建即可：
+
+```bash
+kubectl delete pod <Pod名> -n <命名空间>
+```
+
+镜像地址还是 `docker.io/...` 或不带仓库前缀（如 `nginx`）的，把镜像改成加速地址（Deployment 会自动滚动重建 Pod）：
+
+```bash
+kubectl set image deployment/<Deployment名> <容器名>=$DOCKER_HUB_MIRROR/library/nginx -n <命名空间>
+```
+
+`<容器名>` 用 `kubectl get deployment <Deployment名> -n <命名空间> -o jsonpath='{.spec.template.spec.containers[*].name}'` 查看。以第五节的 nginx 测试为例，容器名就是 `nginx`：
+
+```bash
+kubectl set image deployment/test-nginx nginx=$DOCKER_HUB_MIRROR/library/nginx
+kubectl rollout status deployment/test-nginx --timeout=120s
+kubectl get pods -o wide -l app=test-nginx
+kubectl get deployment test-nginx -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+```
+
+成功标准：`rollout status` 输出 `successfully rolled out`；Pod 名中间那段（ReplicaSet 哈希）变成新的、状态 `1/1 Running`；镜像为 `docker.m.daocloud.io/library/nginx`。
+
+更新过程中旧 Pod（名字里是旧的哈希）会短暂显示 `Completed` / `Terminating` 后消失，属于正常。用 `get pods -w` 观察时只会打印状态变化的行，容易只看到旧 Pod，用 `rollout status` 更直观。镜像仍是旧地址时，多半是执行 `set image` 时 `$DOCKER_HUB_MIRROR` 为空（换了终端），重新赋值后再执行。
 
 ### 扩展为集群
 
@@ -599,7 +912,7 @@ sudo rm -rf /etc/cni/net.d $HOME/.kube
 
 ### `sudo: crictl: command not found`
 
-原因：新版 kubeadm 不再依赖 `cri-tools`，不会自动安装 crictl。
+原因：漏了第三节第 2 步中的 `cri-tools`（新版 kubeadm 不再依赖它，不会自动安装）。
 解决：`sudo apt install -y cri-tools`，再执行 `sudo crictl config --set runtime-endpoint=unix:///run/containerd/containerd.sock`。
 
 ### 执行命令报 `-bash: 本机IP: No such file or directory`
@@ -625,7 +938,7 @@ sudo rm -rf /etc/cni/net.d $HOME/.kube
 ### preflight 报 `[ERROR Swap]` / `[ERROR FileContent--proc-sys-net-bridge-bridge-nf-call-iptables]`
 
 原因：swap 未关闭，或 `br_netfilter` 模块未加载。
-解决：重新执行第一节第 1、2 步。
+解决：重新执行第一节第 3、4 步。
 
 ### `kubeadm init` 报 `[ERROR IsPrivilegedUser]: user is not running as root`
 
@@ -651,6 +964,21 @@ sudo rm -rf /etc/cni/net.d $HOME/.kube
 
 原因：Calico 没起来（镜像拉取失败最常见），或防火墙被开启后拦截了 Pod 网络流量。
 解决：`kubectl get pods -n kube-system | grep calico` 找到 Pod，`kubectl describe pod` / `kubectl logs` 看原因；`sudo ufw status` 确认防火墙为 `inactive`。
+
+### Pod 卡在 `ImagePullBackOff`（calico、nginx、busybox 等 Docker Hub 镜像）
+
+原因：拉不到 Docker Hub 镜像（国内最常见，直接访问官方地址时好时坏：Calico 能拉下来，nginx 却失败）。
+解决：按第二节第 3 步配置 containerd 的国内加速地址，清单和命令里的镜像写成 `$DOCKER_HUB_MIRROR/...`；已配置仍失败时，用第二节第 3 步的 `curl` 命令逐个检查加速地址，删掉不可用的，`sudo systemctl restart containerd` 后让 Pod 重新拉取，完整步骤见“运维操作 → 补配 / 更换 Docker Hub 加速地址”。`kubectl describe pod <Pod名> | tail -10` 可以看到是哪个镜像拉取失败。
+
+### DNS 测试报 `server can't find kubernetes.default: NXDOMAIN`，`kubectl wait` 一直不返回
+
+原因：busybox 新版本的 `nslookup` 不使用 `/etc/resolv.conf` 的 search 域，短名 `kubernetes.default` 不会补全成 `kubernetes.default.svc.cluster.local`；命令失败后 Pod 为 `Failed`，等待 `Succeeded` 的 `kubectl wait` 会一直等到超时。输出第一行 `Server: 10.96.0.10` 说明 CoreDNS 本身是通的。
+解决：`kubectl delete pod dns-test` 后改查完整域名 `kubernetes.default.svc.cluster.local`（第五节第 2 步已是这种写法）。
+
+### Pod 拿到的 IP 不在 Pod 网段内，或与内网 IP 冲突
+
+原因：`calico.yaml` 中 `CALICO_IPV4POOL_CIDR` 没有改，或与 `kubeadm init` 的 `--pod-network-cidr` 不一致。
+解决：`kubectl get ippools -o wide` 查看 Calico 实际使用的网段；不一致时重置集群，按文档重新 init 并在 apply 前改好 `calico.yaml`。
 
 ### Pod 一直 Pending，提示 `unbound immediate PersistentVolumeClaims`
 

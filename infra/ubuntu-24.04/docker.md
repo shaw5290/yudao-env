@@ -16,7 +16,34 @@
 
 以下命令用有 sudo 权限的普通账号执行，需要 root 权限的命令都已加 `sudo`；不要 `sudo -i` 切到 root 后再执行，否则 `$USER`、`$HOME` 会变成 root 的。
 
-## 1. 卸载旧版本
+## 1. 安装基础工具
+
+按最小化安装的 Ubuntu 考虑，后续步骤用到的工具在这里一次装好（国内服务器 apt 慢时，先按 [k8s-single.md](k8s-single.md) 第一节第 1 步把 Ubuntu 源换成阿里云）：
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl ufw git rsync vim
+```
+
+| 工具 | 用途 |
+|---|---|
+| `ca-certificates`、`curl` | 下载 Docker GPG 密钥、添加软件源 |
+| `ufw` | 防火墙（本地部署保持关闭，装上便于确认状态） |
+| `git` | 拉取本仓库 |
+| `rsync` | 迁移 Docker 数据目录（见常见问题） |
+| `vim` | 修改 `.env` 等配置文件 |
+
+校验：
+
+```bash
+for c in curl ufw git rsync vim; do
+  command -v $c > /dev/null && echo "OK  $c" || echo "缺少 $c"
+done
+```
+
+成功标准：全部输出 `OK`，没有 `缺少`。
+
+## 2. 卸载旧版本
 
 系统自带的 `docker.io`、`podman-docker` 等包与 Docker 官方包冲突，先卸载（没装过会提示未安装，忽略即可）：
 
@@ -26,7 +53,7 @@ for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker c
 done
 ```
 
-## 2. 安装 Docker Engine
+## 3. 安装 Docker Engine
 
 软件源地址二选一。国内服务器：
 
@@ -49,8 +76,6 @@ echo $DOCKER_MIRROR
 安装：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL $DOCKER_MIRROR/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -63,7 +88,7 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-## 3. 配置 Docker
+## 4. 配置 Docker
 
 写 `/etc/docker/daemon.json`（`data-root` 指向的目录不存在时 Docker 会自动创建）：
 
@@ -78,7 +103,12 @@ sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
     "max-size": "100m",
     "max-file": "3"
   },
-  "registry-mirrors": []
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.1ms.run",
+    "https://docker.1panel.live",
+    "https://docker.xuanyuan.me"
+  ]
 }
 EOF
 ```
@@ -88,11 +118,11 @@ EOF
 | `data-root` | 镜像、容器、命名卷的存放目录，默认 `/var/lib/docker`；有数据盘时指向数据盘。**装好后再改要先迁移数据** |
 | `exec-opts` | cgroup 驱动用 systemd，与 kubelet 保持一致（同一台机器以后要加入 K8s 时不用再改） |
 | `log-opts` | 限制容器日志大小，避免 `docker logs` 撑满磁盘 |
-| `registry-mirrors` | Docker Hub 镜像加速地址。**国内服务器基本访问不了 Docker Hub，必须配置**，否则拉镜像（包括下面的 `hello-world`）会超时。填自己可用的加速器（如阿里云容器镜像服务分配的专属地址）；也可以填本仓库 NORA 的 Docker 代理地址 |
+| `registry-mirrors` | Docker Hub 国内加速地址，按顺序尝试（2026-11-12 实测可用，都是第三方公益服务，可能限流或下线；检查方法见 [k8s-single.md](k8s-single.md) 第二节第 3 步）。**国内服务器必须配置**，否则拉镜像（包括下面的 `hello-world`）会超时。海外服务器改成 `[]`。也可以加本仓库 NORA 的 Docker 代理地址 |
 
 使用 NORA（`--profile nora`）作为 HTTP 私有仓库时，还需要加 `"insecure-registries": ["<NORA 主机 IP>:4000"]`。
 
-## 4. 启动并设置开机自启
+## 5. 启动并设置开机自启
 
 apt 安装后 Docker 已经自动启动，改了 `daemon.json` 要重启才生效：
 
@@ -109,7 +139,7 @@ sudo usermod -aG docker $USER
 exit        # 退出后重新 SSH 登录
 ```
 
-## 5. 验证
+## 6. 验证
 
 重新登录后执行（不加 sudo 能执行，说明 docker 组已生效）：
 
@@ -123,7 +153,7 @@ docker run --rm hello-world
 
 `Docker Root Dir` 应为 `daemon.json` 中的 `data-root`，`Cgroup Driver` 应为 `systemd`。
 
-## 6. 部署 yudao-env
+## 7. 部署 yudao-env
 
 ```bash
 git clone https://gitee.com/imshaw/yudao-env.git
@@ -147,12 +177,11 @@ chmod +x compose/yudao.sh compose/services/*.sh
 - `ROCKETMQ_BROKER_IP`、`SEATA_IP` 填服务器内网 IP，不能写 `127.0.0.1`。
 - 所有端口都映射到宿主机所有网卡，**不要直接暴露到公网**，见下一节。
 
-## 7. 防火墙
+## 8. 防火墙
 
-本地部署不启用防火墙（最小化安装的 Ubuntu 没有 ufw，先安装，保持关闭）：
+本地部署不启用防火墙（ufw 已在第 1 节安装，保持关闭）：
 
 ```bash
-sudo apt install -y ufw
 sudo ufw disable
 sudo ufw status        # Status: inactive
 ```
