@@ -1,4 +1,4 @@
-# ==================== GitOps 最小环境：postgres、redis、rabbitmq、r-nacos、loki、gitea、nora + gitops-sync ====================
+# ==================== GitOps 最小环境：postgresql、redis、rabbitmq、r-nacos、loki、gitea、nora + gitops-sync ====================
 # 本文件是 gitops-sync 从 Gitea 拉取后 apply 的入口，首次部署也可手工执行：
 #   kubectl --context <集群上下文> apply -k gitops-k8s-mini
 # 命名空间、gitops-sync 的 ServiceAccount / RBAC 在 bootstrap/（手工 apply 一次，不参与自动同步）
@@ -11,7 +11,7 @@ labels:
       app.kubernetes.io/part-of: yudao-env-mini
     includeSelectors: false   # 只加到 metadata，不改 selector（已有 Deployment 的 selector 不可变）
 resources:
-  - services/postgres.yaml
+  - services/postgresql.yaml
   - services/redis.yaml
   - services/rabbitmq.yaml
   - services/r-nacos.yaml

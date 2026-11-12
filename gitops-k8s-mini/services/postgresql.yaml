@@ -1,10 +1,10 @@
-# ==================== postgres（每个服务一个文件）====================
+# ==================== postgresql（每个服务一个文件）====================
 # 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply；从 gitops-k8s/services/postgres.yaml 复制，两边分开维护
 # 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-data
+  name: postgresql-data
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -14,23 +14,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres
+  name: postgresql
   labels:
-    app: postgres
+    app: postgresql
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: postgres
+      app: postgresql
   template:
     metadata:
       labels:
-        app: postgres
+        app: postgresql
     spec:
       containers:
-        - name: postgres
+        - name: postgresql
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
@@ -53,16 +53,16 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: postgres-data
+            claimName: postgresql-data
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: postgresql
 spec:
   selector:
-    app: postgres
+    app: postgresql
   ports:
-    - name: postgres
+    - name: postgresql
       port: 5432
       targetPort: 5432

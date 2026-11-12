@@ -4,7 +4,7 @@
 
 | 服务 | 镜像 | 用途 | hostPort | 存储 |
 |---|---|---|---|---|
-| postgres | `postgres:16-alpine` | 业务主库 `ruoyi-vue-pro` | 5432 | `postgres-data` 5Gi |
+| postgresql | `postgres:16-alpine` | 业务主库 `ruoyi-vue-pro` | 5432 | `postgresql-data` 5Gi |
 | redis | `redis:7` | 缓存 | 6379 | 无（不持久化） |
 | rabbitmq | `rabbitmq:4.1-management` | 消息队列 | 5672、15672（管理控制台） | `rabbitmq-data` 2Gi |
 | r-nacos | `qingpan/rnacos:v0.8.8` | 注册 / 配置中心（兼容 Nacos 客户端协议） | 8848、9848（gRPC）、10848（控制台） | `r-nacos-data` 1Gi |
@@ -18,17 +18,17 @@
                      ▲  每 2 分钟浅克隆 GITOPS_BRANCH
                      │
               CronJob gitops-sync ──▶ kubectl apply -k <GITOPS_PATH>
-                                       （postgres、redis、rabbitmq、r-nacos、loki、gitea、nora、gitops-sync 自身）
+                                       （postgresql、redis、rabbitmq、r-nacos、loki、gitea、nora、gitops-sync 自身）
 ```
 
 ## 与 `gitops-k8s/` 的区别
 
-- **更少、更轻**：postgres、redis、rabbitmq、nora 保留；去掉 minio（文件改用数据库或本地存储）；Nacos 换成 r-nacos（Rust 实现，几十 MB 内存），Grafana LGTM 换成单独的 Loki（distroless，只存日志）。
+- **更少、更轻**：postgresql、redis、rabbitmq、nora 保留；去掉 minio（文件改用数据库或本地存储）；Nacos 换成 r-nacos（Rust 实现，几十 MB 内存），Grafana LGTM 换成单独的 Loki（distroless，只存日志）。
 - **真正的 GitOps**：`gitops-k8s` 是上传文件后手工 `apply -k`；本目录启用同步后以 Gitea 中的内容为准，服务器上不再手工 apply。没有引入 Argo CD / Flux，同步用一个 CronJob 完成，不常驻进程。
 - **独立命名空间 `yudao-mini`**：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在 `yudao-mini` 中，用本目录的 `.env` 生成。
 - **引导资源单独一层**：命名空间、`gitops-sync` 的 ServiceAccount / Role 在 `bootstrap/`，手工 apply 一次，不参与同步。同步任务只有命名空间内权限，同步的清单里不能放 Namespace、ClusterRole 等集群级资源。
 - **配置文件进 ConfigMap**：`config/loki.yml`、`config/gitops-sync.sh` 由 `configMapGenerator` 生成，名称带内容哈希，改了文件后对应 Pod 自动滚动更新。
-- 沿用 `gitops-k8s` 的约定：变量名用镜像原生名、每个服务用 `secretKeyRef` 只取自己的键、端口写在清单的 `hostPort`、不使用 hostPath、依赖默认 StorageClass（local-path）。`services/` 下的 postgres、redis、rabbitmq、nora 从 `gitops-k8s` 复制，两边分开维护，改镜像版本时注意同步。
+- 沿用 `gitops-k8s` 的约定：变量名用镜像原生名、每个服务用 `secretKeyRef` 只取自己的键、端口写在清单的 `hostPort`、不使用 hostPath、依赖默认 StorageClass（local-path）。`services/` 下的 postgresql、redis、rabbitmq、nora 从 `gitops-k8s` 复制，两边分开维护，改镜像版本时注意同步。
 
 ### 与 `gitops-k8s` 装在同一集群
 
@@ -36,7 +36,7 @@
 
 | 端口 | gitops-k8s | gitops-k8s-mini |
 |---|---|---|
-| 5432、6379、5672、15672 | postgres、redis、rabbitmq | 同左 |
+| 5432、6379、5672、15672 | postgresql、redis、rabbitmq | 同左 |
 | 8848、9848 | nacos | r-nacos |
 | 3000 | lgtm（Grafana） | gitea |
 | 4000 | nora | nora |
@@ -100,13 +100,13 @@ kubectl --context kubernetes-admin@kubernetes apply -k .
 kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc,cronjob -n yudao-mini -o wide
 ```
 
-成功标准：`postgres`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora` 7 个 Pod 都是 `Running` 且 `READY 1/1`，PVC 都是 `Bound`。`gitops-sync` 此时每 2 分钟运行一次，日志为 `[跳过] ... 未配置 GITOPS_REPO_URL`，属正常。
+成功标准：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora` 7 个 Pod 都是 `Running` 且 `READY 1/1`，PVC 都是 `Bound`。`gitops-sync` 此时每 2 分钟运行一次，日志为 `[跳过] ... 未配置 GITOPS_REPO_URL`，属正常。
 
 Secret `yudao-env` 中用到的键：
 
 | 服务 | 键 | 必填 |
 |---|---|---|
-| postgres | `POSTGRES_USER`、`POSTGRES_PASSWORD`（`POSTGRES_DB` 固定为 `ruoyi-vue-pro`，写在清单中） | 是 |
+| postgresql | `POSTGRES_USER`、`POSTGRES_PASSWORD`（`POSTGRES_DB` 固定为 `ruoyi-vue-pro`，写在清单中） | 是 |
 | redis | `REDIS_PASSWORD`（可为空，但必须有这一行） | 是 |
 | rabbitmq | `RABBITMQ_DEFAULT_USER`、`RABBITMQ_DEFAULT_PASS`（只在数据卷首次初始化时生效） | 是 |
 | r-nacos | `RNACOS_INIT_ADMIN_USERNAME`、`RNACOS_INIT_ADMIN_PASSWORD`（只在空库首次启动时生效） | 是 |
@@ -119,7 +119,7 @@ loki 不需要 Secret。
 PostgreSQL 表结构只需在空库上导入一次（脚本首行是 `\connect "ruoyi-vue-pro"`）。在本机 `yudao-env` 仓库根目录执行，SQL 经 ssh 直接传给 Pod：
 
 ```bash
-PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-mini deploy/postgres -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
+PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-mini deploy/postgresql -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
 ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/02-yudao-schema.sql
 ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/03-yudao-quartz.sql
 ```
@@ -205,7 +205,7 @@ kubectl --context kubernetes-admin@kubernetes -n yudao-mini logs -f job/gitops-s
 
 | 服务 | 外部地址 | 集群内地址 | 账号 |
 |---|---|---|---|
-| postgres | `jdbc:postgresql://<IP>:5432/ruoyi-vue-pro` | `postgres:5432` | `POSTGRES_USER` / `POSTGRES_PASSWORD` |
+| postgresql | `jdbc:postgresql://<IP>:5432/ruoyi-vue-pro` | `postgresql:5432` | `POSTGRES_USER` / `POSTGRES_PASSWORD` |
 | redis | `redis://<IP>:6379` | `redis:6379` | 只有密码 `REDIS_PASSWORD` |
 | rabbitmq | `amqp://<IP>:5672/`，管理控制台 `http://<IP>:15672` | `rabbitmq:5672` | `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` |
 | r-nacos | 服务 `<IP>:8848`，控制台 `http://<IP>:10848` | `r-nacos:8848` | 控制台：`RNACOS_INIT_ADMIN_USERNAME` / `RNACOS_INIT_ADMIN_PASSWORD`；客户端接口不鉴权 |
@@ -222,7 +222,7 @@ kubectl --context kubernetes-admin@kubernetes -n yudao-mini get secret yudao-env
 检查服务是否可用：
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/postgres -- pg_isready
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/postgresql -- pg_isready
 kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/redis -- redis-cli ping
 kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/rabbitmq -- rabbitmq-diagnostics -q ping
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:10848/
@@ -268,7 +268,7 @@ curl -s -G http://<IP>:3100/loki/api/v1/query_range --data-urlencode 'query={ser
 
 ## 常用操作
 
-服务名：`postgres`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora`，以下以 `gitea` 为例。
+服务名：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora`，以下以 `gitea` 为例。
 
 ```bash
 kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc,cronjob -n yudao-mini -o wide
