@@ -1,4 +1,5 @@
 # ==================== gitops-sync 权限 ====================
+# 【已停用】同步改用 Flux CD，kustomization.yaml 中已注释掉本文件，保留备查
 # 只授予命名空间 yudao-mini 内的全部权限（Role，不是 ClusterRole）：
 # 同步的清单里不能放 Namespace、ClusterRole 等集群级资源，需要时手工 apply
 apiVersion: v1

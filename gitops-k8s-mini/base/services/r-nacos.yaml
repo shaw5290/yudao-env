@@ -1,5 +1,5 @@
 # ==================== r-nacos（每个服务一个文件）====================
-# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply
+# 由 ../kustomization.yaml 引用，Flux 从 Gitee 拉取后自动 apply
 # 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
 # r-nacos：Rust 实现的 Nacos，兼容 Nacos 1.x HTTP / 2.x、3.x gRPC 客户端协议，内置存储，单机内存占用几十 MB
 apiVersion: v1

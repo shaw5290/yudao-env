@@ -1,0 +1,9 @@
+# ==================== 集群 test 的 Flux 同步配置（手工 apply 一次） ====================
+#   kubectl --context <test 集群上下文> apply -k gitops-k8s-mini/clusters/test
+# 前置：已 flux install，并在 flux-system 中创建 Secret gitee-auth（必需）、acr-auth（用 ACR 时），见 ../../README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gitrepository.yaml
+  - sync.yaml
+  # 本环境不自动更新镜像：Tag 由 local / dev 验证后手工改 overlays/test 并合并到 main（晋升）

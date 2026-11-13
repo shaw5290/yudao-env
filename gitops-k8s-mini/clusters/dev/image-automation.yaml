@@ -1,0 +1,53 @@
+# ==================== ACR 镜像自动更新（dev） ====================
+# 需要 flux install 时带上 --components-extra=image-reflector-controller,image-automation-controller，
+# 并在 flux-system 中创建 Secret acr-auth（扫描 ACR Tag）；gitee-auth 的令牌需要写权限（把新 Tag 提交回 Gitee）
+# 用法：每个应用镜像一组 ImageRepository + ImagePolicy（下面以 yudao-gateway 为例，换成实际镜像），
+# 并在 ../../overlays/dev/kustomization.yaml 的 images 中给 newTag 加标记：
+#   newTag: "2.6.0" # {"$imagepolicy": "flux-system:yudao-gateway:tag"}
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: yudao-gateway
+  namespace: flux-system
+spec:
+  image: registry.cn-hangzhou.aliyuncs.com/<ACR 命名空间>/yudao-gateway   # ACR 个人版 / 企业版的镜像地址
+  interval: 5m
+  secretRef:
+    name: acr-auth
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: yudao-gateway
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: yudao-gateway
+  policy:
+    semver:
+      range: ">=0.0.0"   # 取最大的语义化版本；按构建号可改用 numerical + filterTags
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: yudao-mini
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: yudao-env
+  git:
+    checkout:
+      ref:
+        branch: feature/dev
+    commit:
+      author:
+        name: fluxcd
+        email: fluxcd@users.noreply.gitee.com
+      messageTemplate: "chore(gitops-k8s-mini): 更新 dev 镜像 Tag"
+    push:
+      branch: feature/dev
+  update:
+    path: ./gitops-k8s-mini/overlays/dev
+    strategy: Setters

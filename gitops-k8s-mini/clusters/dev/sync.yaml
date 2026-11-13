@@ -1,0 +1,16 @@
+# 同步：把 overlays/dev 应用到集群（命名空间 yudao-mini，由 ../../bootstrap 创建）
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: yudao-mini
+  namespace: flux-system
+spec:
+  interval: 2m            # 每 2 分钟与 Git 对齐一次（也会纠正集群中的手工改动）
+  retryInterval: 1m
+  timeout: 5m
+  path: ./gitops-k8s-mini/overlays/dev
+  prune: true             # 从 Git 删除的资源同步删除（含 PVC 数据），删服务前先备份
+  wait: true              # 等资源就绪才算同步成功
+  sourceRef:
+    kind: GitRepository
+    name: yudao-env

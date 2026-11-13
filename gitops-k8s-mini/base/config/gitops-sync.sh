@@ -1,7 +1,8 @@
 #!/bin/sh
 # GitOps 同步脚本：由 CronJob gitops-sync 执行（../services/gitops-sync.yaml）
+# 【已停用】GitOps 改用 Flux CD + Gitee（见 ../../clusters/），configMapGenerator 中已注释掉本文件，保留备查
 # 从 Gitea 浅克隆 GITOPS_BRANCH，对仓库内 GITOPS_PATH 目录执行 kubectl apply -k
-# kubectl 使用 Pod 的 ServiceAccount gitops-sync（权限见 ../bootstrap/gitops-sync-rbac.yaml）
+# kubectl 使用 Pod 的 ServiceAccount gitops-sync（权限见 ../../bootstrap/gitops-sync-rbac.yaml）
 set -eu
 
 if [ -z "${GITOPS_REPO_URL:-}" ]; then

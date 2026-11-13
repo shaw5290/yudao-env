@@ -1,7 +1,7 @@
 # ==================== 引导资源（手工 apply 一次，不参与自动同步） ====================
 #   kubectl --context <集群上下文> apply -k gitops-k8s-mini/bootstrap
-# 命名空间和 gitops-sync 的权限放在这里：同步 Job 只拿命名空间内权限，不需要集群级权限，
-# 也不会因为一次错误提交把自己的权限删掉
+# 命名空间、默认 ServiceAccount（ACR 拉取凭证）放在这里，不参与 Flux 同步：
+# 避免一次错误提交把命名空间（连同 PVC 数据）删掉；Flux 本身的安装和同步配置见 ../clusters/<环境>/
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: yudao-mini
@@ -11,4 +11,5 @@ labels:
     includeSelectors: false
 resources:
   - namespace.yaml
-  - gitops-sync-rbac.yaml
+  - default-serviceaccount.yaml
+  # - gitops-sync-rbac.yaml   # 已停用：同步改用 Flux CD，不再需要 gitops-sync 的权限

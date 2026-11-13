@@ -1,5 +1,5 @@
 # ==================== nora（每个服务一个文件）====================
-# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply；从 gitops-k8s/services/nora.yaml 复制，两边分开维护
+# 由 ../kustomization.yaml 引用，Flux 从 Gitee 拉取后自动 apply；从 gitops-k8s/services/nora.yaml 复制，两边分开维护
 # 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
 apiVersion: v1
 kind: PersistentVolumeClaim

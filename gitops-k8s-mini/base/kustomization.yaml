@@ -1,0 +1,27 @@
+# ==================== GitOps 最小环境 base：postgresql、redis、rabbitmq、r-nacos、loki、nora ====================
+# 各环境共用；环境差异（镜像 Tag、副本数、patches）只写在 ../overlays/<环境>/，不改这里
+# 同步由 Flux CD 从 Gitee 拉取（../clusters/<环境>/），Secret yudao-env 不入库，部署前手工创建，见 ../README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: yudao-mini
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: yudao-env-mini
+    includeSelectors: false   # 只加到 metadata，不改 selector（已有 Deployment 的 selector 不可变）
+resources:
+  - services/postgresql.yaml
+  - services/redis.yaml
+  - services/rabbitmq.yaml
+  - services/r-nacos.yaml
+  - services/loki.yaml
+  # - services/gitea.yaml         # 已停用：Git 仓库改用 Gitee，不在集群内托管
+  - services/nora.yaml
+  # - services/gitops-sync.yaml   # 已停用：同步改用 Flux CD（../clusters/<环境>/）
+# 配置文件生成 ConfigMap，名称带内容哈希：文件变化后引用它的 Pod 自动滚动更新
+configMapGenerator:
+  - name: loki-config
+    files:
+      - default.yml=config/loki.yml   # 11notes/loki 固定读取 /loki/etc/default.yml
+  # - name: gitops-sync-script        # 已停用：随 gitops-sync 一起停用
+  #   files:
+  #     - sync.sh=config/gitops-sync.sh

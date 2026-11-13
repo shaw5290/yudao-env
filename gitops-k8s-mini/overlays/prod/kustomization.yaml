@@ -1,0 +1,17 @@
+# ==================== 环境 prod：生产环境集群 ====================
+# 由 ../../clusters/prod/sync.yaml（Flux Kustomization）同步；只写本环境与 base 的差异
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+# 镜像版本差异示例（ACR 中的应用镜像、或固定中间件版本）：
+# images:
+#   - name: registry.cn-hangzhou.aliyuncs.com/<ACR 命名空间>/yudao-gateway
+#     newTag: "2.6.0"
+# 副本数 / 资源等差异用 patches，例如：
+# patches:
+#   - target: { kind: Deployment, name: loki }
+#     patch: |-
+#       - op: replace
+#         path: /spec/replicas
+#         value: 0

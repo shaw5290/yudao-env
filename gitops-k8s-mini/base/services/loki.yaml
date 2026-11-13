@@ -1,5 +1,5 @@
 # ==================== loki（每个服务一个文件）====================
-# 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply
+# 由 ../kustomization.yaml 引用，Flux 从 Gitee 拉取后自动 apply
 # 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath
 # 11notes/loki：distroless、无 shell，以 1000:1000 运行；配置固定读 /loki/etc/default.yml，
 # 由 ../config/loki.yml 经 configMapGenerator 生成（ConfigMap 名带哈希，改配置后自动滚动更新）

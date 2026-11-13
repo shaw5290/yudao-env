@@ -1,6 +1,6 @@
 # gitops-k8s-mini：最小 GitOps 环境
 
-用 yudao-cloud 必需的基础依赖加 4 个轻量服务和 1 个定时同步任务，在独立的 Kubernetes 集群（如 `infra/ubuntu-24.04/k8s-single.md` 搭建的 kubeadm 单机集群）上搭一套最小 GitOps：清单托管在集群内的 Gitea，`gitops-sync` 每 2 分钟拉取并 `kubectl apply -k`，推送即部署。
+用 yudao-cloud 必需的基础依赖加几个轻量服务，在自建 Kubernetes 集群（如 `infra/ubuntu-24.04/k8s-single.md` 搭建的 kubeadm 单机集群）上搭一套 GitOps：清单托管在 **Gitee**（`yudao-env` 仓库的本目录），集群中的 **Flux CD** 持续拉取并应用，推送即部署；应用镜像放在**阿里云容器镜像服务 ACR**，Flux 可自动把 ACR 中的新 Tag 写回 Gitee。支持 **local、dev、test、prod** 四个环境，每个环境一个集群。
 
 | 服务 | 镜像 | 用途 | hostPort | 存储 |
 |---|---|---|---|---|
@@ -9,26 +9,35 @@
 | rabbitmq | `rabbitmq:4.1-management` | 消息队列 | 5672、15672（管理控制台） | `rabbitmq-data` 2Gi |
 | r-nacos | `qingpan/rnacos:v0.8.8` | 注册 / 配置中心（兼容 Nacos 客户端协议） | 8848、9848（gRPC）、10848（控制台） | `r-nacos-data` 1Gi |
 | loki | `11notes/loki:3.7.9` | 日志存储与查询（接收 OTLP 日志，保留 7 天） | 3100 | `loki-data` 5Gi |
-| gitea | `gitea/gitea:28.3.0` | Git 仓库，GitOps 的唯一来源（SQLite，只开 HTTP） | 3000 | `gitea-data` 5Gi |
 | nora | `ghcr.io/getnora-io/nora:1.4.4` | 制品仓库（Docker / Maven / npm 代理缓存） | 4000 | `nora-data` 20Gi |
-| gitops-sync | `alpine/k8s:1.36.2` | CronJob：从 Gitea 拉取清单并 apply | 无 | 无 |
+| ~~gitea~~ | `gitea/gitea:28.3.0` | **已停用**：Git 仓库改用 Gitee；清单 `base/services/gitea.yaml` 保留备查，未被引用 | — | — |
+| ~~gitops-sync~~ | `alpine/k8s:1.36.2` | **已停用**：同步改用 Flux CD；清单、脚本保留备查，未被引用 | — | — |
 
 ```text
-本机 git push ──▶ Gitea（yudao-mini/gitea）
-                     ▲  每 2 分钟浅克隆 GITOPS_BRANCH
+本机 git push ──▶ Gitee（imshaw/yudao-env，目录 gitops-k8s-mini）
+                     ▲  Flux source-controller 每分钟检查新提交（GitRepository yudao-env）
                      │
-              CronJob gitops-sync ──▶ kubectl apply -k <GITOPS_PATH>
-                                       （postgresql、redis、rabbitmq、r-nacos、loki、gitea、nora、gitops-sync 自身）
+   集群 <环境> ── Flux kustomize-controller ──▶ apply overlays/<环境>（命名空间 yudao-mini）
+                     │
+   ACR ◀── image-reflector-controller 扫描新 Tag ── image-automation-controller 把 Tag 提交回 Gitee（local / dev）
 ```
+
+| 环境 | 集群 | 跟踪分支 | 同步目录 | ACR 镜像自动更新 |
+|---|---|---|---|---|
+| local | 本地自建集群（当前 192.168.31.66） | `feature/dev` | `overlays/local` | 可选（`clusters/local/image-automation.yaml`） |
+| dev | 开发集群 | `feature/dev` | `overlays/dev` | 可选（`clusters/dev/image-automation.yaml`） |
+| test | 测试集群 | `main` | `overlays/test` | 否，手工晋升 |
+| prod | 生产集群 | `main` | `overlays/prod` | 否，手工晋升 |
 
 ## 与 `gitops-k8s/` 的区别
 
 - **更少、更轻**：postgresql、redis、rabbitmq、nora 保留；去掉 minio（文件改用数据库或本地存储）；Nacos 换成 r-nacos（Rust 实现，几十 MB 内存），Grafana LGTM 换成单独的 Loki（distroless，只存日志）。
-- **真正的 GitOps**：`gitops-k8s` 是上传文件后手工 `apply -k`；本目录启用同步后以 Gitea 中的内容为准，服务器上不再手工 apply。没有引入 Argo CD / Flux，同步用一个 CronJob 完成，不常驻进程。
+- **真正的 GitOps**：`gitops-k8s` 是上传文件后手工 `apply -k`；本目录由 Flux CD 从 Gitee 同步，以 Git 中的内容为准，服务器上不再手工 apply。Flux 常驻 4 个控制器（source、kustomize、image-reflector、image-automation），合计约 200~300 MB 内存。
 - **独立命名空间 `yudao-mini`**：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在 `yudao-mini` 中，用本目录的 `.env` 生成。
-- **引导资源单独一层**：命名空间、`gitops-sync` 的 ServiceAccount / Role 在 `bootstrap/`，手工 apply 一次，不参与同步。同步任务只有命名空间内权限，同步的清单里不能放 Namespace、ClusterRole 等集群级资源。
-- **配置文件进 ConfigMap**：`config/loki.yml`、`config/gitops-sync.sh` 由 `configMapGenerator` 生成，名称带内容哈希，改了文件后对应 Pod 自动滚动更新。
-- 沿用 `gitops-k8s` 的约定：变量名用镜像原生名、每个服务用 `secretKeyRef` 只取自己的键、端口写在清单的 `hostPort`、不使用 hostPath、依赖默认 StorageClass（local-path）。`services/` 下的 postgresql、redis、rabbitmq、nora 从 `gitops-k8s` 复制，两边分开维护，改镜像版本时注意同步。
+- **多环境**：`base/` 是共用清单，`overlays/<环境>/` 只写差异，`clusters/<环境>/` 是该环境集群的 Flux 同步配置。
+- **引导资源单独一层**：命名空间、默认 ServiceAccount（挂 ACR 拉取凭证）在 `bootstrap/`，手工 apply 一次，不参与同步，避免一次错误提交把命名空间连同数据删掉。
+- **配置文件进 ConfigMap**：`base/config/loki.yml` 由 `configMapGenerator` 生成，名称带内容哈希，改了文件后对应 Pod 自动滚动更新。
+- 沿用 `gitops-k8s` 的约定：变量名用镜像原生名、每个服务用 `secretKeyRef` 只取自己的键、端口写在清单的 `hostPort`、不使用 hostPath、依赖默认 StorageClass（local-path）。`base/services/` 下的 postgresql、redis、rabbitmq、nora 从 `gitops-k8s` 复制，两边分开维护，改镜像版本时注意同步。
 
 ### 与 `gitops-k8s` 装在同一集群
 
@@ -38,20 +47,27 @@
 |---|---|---|
 | 5432、6379、5672、15672 | postgresql、redis、rabbitmq | 同左 |
 | 8848、9848 | nacos | r-nacos |
-| 3000 | lgtm（Grafana） | gitea |
+| 3000 | lgtm（Grafana） | —（gitea 已停用，不再冲突） |
 | 4000 | nora | nora |
 
 ## 目录
 
 ```text
 gitops-k8s-mini/
-├── bootstrap/                 # 手工 apply 一次：Namespace yudao-mini、gitops-sync 的 ServiceAccount / Role / RoleBinding
-├── kustomization.yaml         # 同步入口：services/* + configMapGenerator
-├── services/                  # 每个服务一个文件（PVC + Deployment + Service；gitops-sync 为 CronJob）
-├── config/
-│   ├── loki.yml               # Loki 配置，挂载为 /loki/etc/default.yml
-│   └── gitops-sync.sh         # 同步脚本
-├── .env.temp                  # 本目录专用的环境变量模板（提交）
+├── bootstrap/                 # 每个集群手工 apply 一次：Namespace yudao-mini、默认 ServiceAccount（imagePullSecrets acr-auth）
+├── base/                      # 各环境共用
+│   ├── kustomization.yaml     # namespace、公共标签、services、configMapGenerator（gitea、gitops-sync 已注释）
+│   ├── services/              # 每个服务一个文件（PVC + Deployment + Service）
+│   └── config/loki.yml        # Loki 配置，挂载为 /loki/etc/default.yml
+├── overlays/                  # 各环境差异：local、dev、test、prod（images / patches）
+├── clusters/                  # 各环境集群的 Flux 配置：local、dev、test、prod
+│   └── <环境>/
+│       ├── kustomization.yaml     # 手工 apply 一次的入口
+│       ├── gitrepository.yaml     # GitRepository yudao-env：Gitee 地址、分支、凭证 gitee-auth
+│       ├── sync.yaml              # Flux Kustomization yudao-mini：同步 overlays/<环境>
+│       └── image-automation.yaml  # 仅 local、dev：ACR 镜像自动更新（默认未启用）
+├── kustomization.yaml         # 兼容旧用法，等同于 overlays/local
+├── .env.temp                  # Secret yudao-env 模板（提交）
 └── .env                       # 由 .env.temp 新建，含口令（不提交）
 ```
 
@@ -66,13 +82,11 @@ cd gitops-k8s-mini
 cp .env.temp .env
 ```
 
-`.env` 已存在时不要覆盖。修改 `.env`，替换所有 `CHANGE_ME`，`GITOPS_*` 先留空（第 6 步再填）：
+`.env` 已存在时不要覆盖。修改 `.env`，替换所有 `CHANGE_ME`（Gitea、GitOps 同步两段已注释，不用填）：
 
 | 变量 | 填写 |
 |---|---|
 | `POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`RABBITMQ_DEFAULT_PASS`、`RNACOS_INIT_ADMIN_PASSWORD` | 自定义口令；可用 `openssl rand -hex 16` 生成 |
-| `GITEA__security__SECRET_KEY` | `openssl rand -hex 32` 生成，之后不要再改 |
-| `GITEA__server__ROOT_URL` | `http://<服务器IP>:3000/` |
 | `NORA_PUBLIC_URL` | `http://<服务器IP>:4000` |
 
 ```bash
@@ -87,20 +101,19 @@ grep -n CHANGE_ME .env   # 没有输出才算填完
 rsync -av gitops-k8s-mini <用户>@<服务器>:/opt/yudao/
 ```
 
-上传后在服务器上 `chmod 600 /opt/yudao/gitops-k8s-mini/.env`。启用 GitOps 之后，清单改动走 Gitea，这个目录只用于引导和重建 Secret。
+上传后在服务器上 `chmod 600 /opt/yudao/gitops-k8s-mini/.env`。启用 Flux 之后，清单改动走 Gitee，这个目录只用于引导、创建 Secret 和 Flux 配置。每个环境的集群各上传一份，`.env` 按环境分别填写。
 
-### 3. 服务器：引导、创建 Secret、首次部署
+### 3. 服务器：引导、创建 Secret yudao-env
 
 ```bash
 cd /opt/yudao/gitops-k8s-mini
 kubectl --context kubernetes-admin@kubernetes apply -k bootstrap
 kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete secret yudao-env --ignore-not-found
 kubectl --context kubernetes-admin@kubernetes -n yudao-mini create secret generic yudao-env --from-env-file=.env
-kubectl --context kubernetes-admin@kubernetes apply -k .
-kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc,cronjob -n yudao-mini -o wide
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini describe secret yudao-env
 ```
 
-成功标准：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora` 7 个 Pod 都是 `Running` 且 `READY 1/1`，PVC 都是 `Bound`。`gitops-sync` 此时每 2 分钟运行一次，日志为 `[跳过] ... 未配置 GITOPS_REPO_URL`，属正常。
+成功标准：命名空间 `yudao-mini`、ServiceAccount `default` 已创建；`describe secret` 列出下表中的键。服务由第 7 步的 Flux 部署，不再手工 `apply -k`（Flux 不可用时的应急方式：`kubectl --context kubernetes-admin@kubernetes apply -k overlays/<环境>`）。
 
 Secret `yudao-env` 中用到的键：
 
@@ -110,13 +123,11 @@ Secret `yudao-env` 中用到的键：
 | redis | `REDIS_PASSWORD`（可为空，但必须有这一行） | 是 |
 | rabbitmq | `RABBITMQ_DEFAULT_USER`、`RABBITMQ_DEFAULT_PASS`（只在数据卷首次初始化时生效） | 是 |
 | r-nacos | `RNACOS_INIT_ADMIN_USERNAME`、`RNACOS_INIT_ADMIN_PASSWORD`（只在空库首次启动时生效） | 是 |
-| gitea | `GITEA__server__ROOT_URL`、`GITEA__security__SECRET_KEY` | 是 |
 | nora | `NORA_PUBLIC_URL`、`NORA_MAVEN_PROXIES`、`NORA_NPM_PROXY`、`NORA_DOCKER_PROXIES` | 否 |
-| gitops-sync | `GITOPS_REPO_URL`、`GITOPS_BRANCH`、`GITOPS_PATH`、`GITOPS_GIT_USERNAME`、`GITOPS_GIT_TOKEN` | 否 |
 
-loki 不需要 Secret。
+loki 不需要 Secret。Gitee、ACR 的凭证不放在 `yudao-env` 中，在第 5、6 步单独创建。
 
-PostgreSQL 表结构只需在空库上导入一次（脚本首行是 `\connect "ruoyi-vue-pro"`）。在本机 `yudao-env` 仓库根目录执行，SQL 经 ssh 直接传给 Pod：
+PostgreSQL 表结构在第 7 步 postgresql 就绪后、空库上导入一次（脚本首行是 `\connect "ruoyi-vue-pro"`）。在本机 `yudao-env` 仓库根目录执行，SQL 经 ssh 直接传给 Pod：
 
 ```bash
 PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-mini deploy/postgresql -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
@@ -124,80 +135,120 @@ ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/02-yudao-schema.sql
 ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/03-yudao-quartz.sql
 ```
 
-### 4. 服务器：创建 Gitea 管理员
+### 4. 服务器：安装 Flux
 
-跳过了安装向导（`INSTALL_LOCK=true`）且关闭了注册，第一个账号用命令创建。`admin` 是 Gitea 保留名，换一个用户名；`--random-password` 会在输出中打印随机口令，首次登录时要求修改：
-
-```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/gitea -- su git -c "gitea admin user create --admin --username <Gitea 用户> --email <邮箱> --random-password"
-```
-
-成功标准：输出 `New user '<Gitea 用户>' has been successfully created!`，用打印出的口令登录 `http://<服务器IP>:3000`。
-
-### 5. 本机：把仓库推送到 Gitea
-
-在 Gitea「设置 → 应用 → 生成令牌」生成两个令牌：
-
-- **推送用**（本机）：权限 `repository` 读写。
-- **同步用**（gitops-sync）：权限 `repository` 只读。
-
-在本机 `yudao-env` 仓库根目录添加远程并推送。开启了 `ENABLE_PUSH_CREATE_USER`，仓库不存在时自动创建（私有），也可以先在网页上建好：
+每个环境的集群执行一次。先安装 Flux CLI（`fluxcd.io` 下载不了时，在能访问 GitHub 的机器上下载 [flux 发布包](https://github.com/fluxcd/flux2/releases) 解压出 `flux` 放到 `/usr/local/bin/`）：
 
 ```bash
-git remote add gitea http://<服务器IP>:3000/<Gitea 用户>/yudao-env.git
-git push gitea feature/dev
+curl -fsSL -o /tmp/flux-install.sh https://fluxcd.io/install.sh
+sudo bash /tmp/flux-install.sh
+flux --version
+flux check --pre
 ```
 
-提示输入账号口令时，用户名填 `<Gitea 用户>`，密码填**推送用令牌**。推送前确认仓库里没有跟踪含真实口令的文件（`git ls-files | grep -i env`）。
-
-### 6. 本机 + 服务器：启用 GitOps
-
-本机修改 `gitops-k8s-mini/.env`：
+Flux 控制器镜像在 `ghcr.io/fluxcd`，节点的 Docker Hub 加速对它无效，国内用 `--registry` 指向 ghcr 加速地址。先导出清单查看镜像，在节点上试拉一个：
 
 ```bash
-GITOPS_REPO_URL=http://gitea:3000/<Gitea 用户>/yudao-env.git   # 集群内 Service 名，不走节点 IP
-GITOPS_BRANCH=feature/dev
-GITOPS_PATH=gitops-k8s-mini
-GITOPS_GIT_USERNAME=<Gitea 用户>
-GITOPS_GIT_TOKEN=<同步用令牌>
+flux install --components-extra=image-reflector-controller,image-automation-controller --registry=ghcr.m.daocloud.io/fluxcd --export > /tmp/flux-install.yaml
+grep "image:" /tmp/flux-install.yaml
+sudo crictl pull ghcr.m.daocloud.io/fluxcd/source-controller:<上一步输出中的标签>
 ```
 
-重新上传 `.env`（第 2 步），在服务器上重建 Secret：
+`crictl pull` 输出 `Image is up to date` 后安装。返回 `403` 说明该加速源不代理这个镜像，换其他 ghcr 加速地址，或在能访问 ghcr.io 的机器上 `docker save` 后用 `sudo ctr -n k8s.io images import <文件>.tar` 导入节点：
+
+```bash
+flux install --components-extra=image-reflector-controller,image-automation-controller --registry=ghcr.m.daocloud.io/fluxcd
+flux check
+```
+
+成功标准：`flux check` 全部 `✔`，`flux-system` 中 4 个控制器 `Running`。不用 ACR 镜像自动更新时可以去掉 `--components-extra`，省两个控制器的内存。
+
+### 5. 服务器：Gitee 凭证 gitee-auth
+
+Flux 用 HTTPS 拉取 Gitee 仓库，账号为 Gitee 用户名，密码为 Gitee **私人令牌**（Gitee「设置 → 私人令牌」生成，权限勾选 `projects`；启用 ACR 镜像自动更新时令牌要有推送权限）：
+
+```bash
+flux create secret git gitee-auth --namespace=flux-system --url=https://gitee.com/imshaw/yudao-env.git --username=<Gitee 用户名> --password=<Gitee 私人令牌>
+kubectl --context kubernetes-admin@kubernetes -n flux-system describe secret gitee-auth
+```
+
+仓库公开且不启用镜像自动更新时可以不建，同时删除 `clusters/<环境>/gitrepository.yaml` 中的 `secretRef`。令牌不要写进仓库或 `.env`。
+
+### 6. 服务器：ACR 凭证 acr-auth
+
+应用镜像放在 ACR 时创建（只用公开镜像可跳过）。`<ACR 地址>` 个人版为 `registry.cn-<地域>.aliyuncs.com`，企业版为 `<实例名>-registry.cn-<地域>.cr.aliyuncs.com`；本地服务器不在阿里云 VPC 内，用公网地址，不要用 `registry-vpc`。账号为阿里云账号全名，口令为 ACR 控制台「访问凭证」中设置的固定密码：
+
+```bash
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini create secret docker-registry acr-auth --docker-server=<ACR 地址> --docker-username=<阿里云账号> --docker-password=<ACR 固定密码>
+kubectl --context kubernetes-admin@kubernetes -n flux-system create secret docker-registry acr-auth --docker-server=<ACR 地址> --docker-username=<阿里云账号> --docker-password=<ACR 固定密码>
+```
+
+- `yudao-mini` 中的 `acr-auth`：Pod 拉取 ACR 私有镜像，由 `bootstrap/default-serviceaccount.yaml` 挂到默认 ServiceAccount，清单中不用写 `imagePullSecrets`。
+- `flux-system` 中的 `acr-auth`：image-reflector-controller 扫描 ACR Tag，只在启用镜像自动更新时需要。
+- 改口令时两处都先 `delete secret acr-auth --ignore-not-found` 再建。
+
+### 7. 服务器：启用 Flux 同步
 
 ```bash
 cd /opt/yudao/gitops-k8s-mini
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete secret yudao-env --ignore-not-found
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini create secret generic yudao-env --from-env-file=.env
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini create job --from=cronjob/gitops-sync gitops-sync-manual
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini logs -f job/gitops-sync-manual
+kubectl --context kubernetes-admin@kubernetes apply -k clusters/local
+flux get sources git
+flux get kustomizations
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini get pods,svc,pvc -o wide
 ```
 
-成功标准：日志依次输出 `[信息] 同步 feature/dev@<提交号>，目录 gitops-k8s-mini`、各资源的 `unchanged` / `configured`、`[完成] 同步结束`。手工触发的 Job 用完后 `kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete job gitops-sync-manual`。
+`local` 换成本集群对应的环境。成功标准：GitRepository `yudao-env` 和 Kustomization `yudao-mini` 都是 `READY True`，MESSAGE 中有当前提交号；`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora` 6 个 Pod 都是 `Running 1/1`，PVC 都是 `Bound`。之后按第 3 步末尾导入 PostgreSQL 表结构。
 
-## GitOps 同步
+**已用旧方式部署过的集群**（Gitea + gitops-sync）：旧的 `gitea`、`gitops-sync` 资源不在 Flux 的清单里，Flux 不会删除它们，确认 Gitee 上有完整的仓库副本后手工清理：
 
-启用后的日常流程：本机修改 `gitops-k8s-mini/` 下的清单 → 提交 → `git push gitea feature/dev`，最多 2 分钟后生效。同时推到 Gitee 的方法：`git push origin feature/dev` 与 `git push gitea feature/dev` 各执行一次。
+```bash
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete cronjob gitops-sync --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete deployment/gitea service/gitea --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete pvc gitea-data --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete -f bootstrap/gitops-sync-rbac.yaml --ignore-not-found
+```
 
-- **以 Git 为准**：在服务器上 `kubectl edit`、`scale` 等手工改动，会在下一次同步时被覆盖（`apply` 会把副本数恢复成清单中的值）。停止服务要在清单里改 `replicas: 0` 后推送。
-- **只增改，不删除**：同步没有开启 `--prune`。从清单删除某个服务后，要手工删除对应资源，例如 `kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete deployment/loki service/loki`。改了 `config/` 下的文件后，旧的带哈希 ConfigMap 会留下，可以按需删除。
-- **Secret 不走 Git**：改 `.env` 后仍按第 6 步上传、重建 Secret，再 `rollout restart` 对应服务（Secret 变化不会自动重启 Pod）。
-- **暂停同步**（排查问题时临时手工操作）：
+### 8. 可选：ACR 镜像自动更新（local、dev）
+
+适合 local / dev：CI 把新镜像推到 ACR 后，Flux 自动把 Tag 写进 `overlays/<环境>/kustomization.yaml` 并提交回 Gitee，再部署。
+
+1. 把 `clusters/<环境>/image-automation.yaml` 中的示例 `yudao-gateway` 换成实际镜像（每个镜像一组 ImageRepository + ImagePolicy），在 `clusters/<环境>/kustomization.yaml` 中取消 `image-automation.yaml` 的注释。
+2. 在 `overlays/<环境>/kustomization.yaml` 的 `images` 中给 `newTag` 加标记：`newTag: "2.6.0" # {"$imagepolicy": "flux-system:yudao-gateway:tag"}`。
+3. 推送到 Gitee 后在服务器上执行 `kubectl --context kubernetes-admin@kubernetes apply -k clusters/<环境>`，检查 `flux get images all`。
+
+Flux 的自动提交会推到 `feature/dev`，本机先 `git pull` 再改，避免冲突。
+
+## 日常变更与环境晋升
+
+本机修改 `gitops-k8s-mini/` 下的清单 → 提交 → `git push origin <分支>`（推到 Gitee），Flux 在 1~2 分钟内应用。
+
+- **改哪里**：所有环境共用的改 `base/`；只影响一个环境的改 `overlays/<环境>/`（`images`、`patches`）。提交前离线渲染：`kubectl kustomize gitops-k8s-mini/overlays/<环境>`。
+- **晋升**：local / dev 跟踪 `feature/dev`，test / prod 跟踪 `main`。在 local / dev 验证后，把 `overlays/test`（之后 `overlays/prod`）的镜像 Tag 改成验证过的版本，合并 `feature/dev` 到 `main` 并推送，test / prod 集群自动部署。`base/` 的改动合并到 `main` 后会同时影响 test 和 prod，先在 `overlays/test` 中验证。
+- **以 Git 为准**：在集群上 `kubectl edit`、`scale` 等手工改动会在下一次同步（2 分钟）时被改回。临时停止服务，在 `overlays/<环境>` 中用 patch 把 `replicas` 设为 0 并推送。
+- **删除会同步**：`prune: true`，从清单删除某个服务后 Flux 会删除对应资源，**包括 PVC 数据**，先备份。
+- **Secret 不走 Git**：改 `.env` 后按第 3 步删除重建 Secret，再 `rollout restart` 对应服务（Secret 变化不会自动重启 Pod）。
+- **立即同步**（不等周期）：
 
   ```bash
-  kubectl --context kubernetes-admin@kubernetes -n yudao-mini patch cronjob gitops-sync -p '{"spec":{"suspend":true}}'
-  kubectl --context kubernetes-admin@kubernetes -n yudao-mini patch cronjob gitops-sync -p '{"spec":{"suspend":false}}'
+  flux reconcile kustomization yudao-mini --with-source
   ```
 
-  清单中没有写 `suspend`，同步不会覆盖这个值。
-
-- **查看同步记录**：
+- **暂停 / 恢复同步**（排查问题时临时手工操作）：
 
   ```bash
-  kubectl --context kubernetes-admin@kubernetes -n yudao-mini get cronjob,jobs -l app=gitops-sync
-  kubectl --context kubernetes-admin@kubernetes -n yudao-mini logs -l app=gitops-sync --tail=50
+  flux suspend kustomization yudao-mini
+  flux resume kustomization yudao-mini
   ```
 
-- 改 `bootstrap/` 后需要在服务器上手工 `apply -k bootstrap`，同步不会处理。
+- **查看同步状态**：
+
+  ```bash
+  flux get sources git
+  flux get kustomizations
+  flux logs --level=error
+  ```
+
+- 改 `bootstrap/`、`clusters/<环境>/` 后需要在服务器上手工 `apply -k`，Flux 不同步这两个目录。
 
 ## 服务地址与账号
 
@@ -210,7 +261,6 @@ kubectl --context kubernetes-admin@kubernetes -n yudao-mini logs -f job/gitops-s
 | rabbitmq | `amqp://<IP>:5672/`，管理控制台 `http://<IP>:15672` | `rabbitmq:5672` | `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` |
 | r-nacos | 服务 `<IP>:8848`，控制台 `http://<IP>:10848` | `r-nacos:8848` | 控制台：`RNACOS_INIT_ADMIN_USERNAME` / `RNACOS_INIT_ADMIN_PASSWORD`；客户端接口不鉴权 |
 | loki | `http://<IP>:3100` | `loki:3100` | 无（不鉴权，单租户） |
-| gitea | `http://<IP>:3000` | `gitea:3000` | 第 4 步创建的管理员 |
 | nora | `http://<IP>:4000/ui/` | `nora:4000` | 无（不鉴权，任何人可读写） |
 
 查看 Secret 中的口令：
@@ -227,7 +277,6 @@ kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/redis --
 kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/rabbitmq -- rabbitmq-diagnostics -q ping
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:10848/
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:3100/ready
-curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:3000/api/healthz
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:4000/health
 ```
 
@@ -237,13 +286,13 @@ curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:4000/health
 
 ### PostgreSQL、Redis、RabbitMQ
 
-后端设置 `DB_PRIMARY=postgresql`，`PG_HOST`、Redis、RabbitMQ 地址从 `127.0.0.1` 换成 `<IP>`，账号口令与 Secret 一致。表结构按第 3 步导入一次。
+后端设置 `DB_PRIMARY=postgresql`，`PG_HOST`、Redis、RabbitMQ 地址从 `127.0.0.1` 换成 `<IP>`，账号口令与 Secret 一致。表结构按第 3 步末尾导入一次。
 
 ### r-nacos
 
 - 地址改为 `NACOS_HOST=<IP>`、`NACOS_PORT=8848`；gRPC 端口客户端自动用 9848。
 - yudao-cloud 默认使用命名空间 `dev`：先在 r-nacos 控制台「命名空间」中新建 ID 为 `dev` 的命名空间，配置也要在控制台重新创建（可从原 Nacos 导出后导入，格式兼容）。
-- 客户端接口未开鉴权（`RNACOS_ENABLE_OPEN_API_AUTH=false`），后端配置的 `NACOS_USERNAME` / `NACOS_PASSWORD` 不校验。要开启时把 `services/r-nacos.yaml` 中的值改为 `"true"` 并推送，后端改用控制台中的用户。
+- 客户端接口未开鉴权（`RNACOS_ENABLE_OPEN_API_AUTH=false`），后端配置的 `NACOS_USERNAME` / `NACOS_PASSWORD` 不校验。要开启时把 `services/r-nacos.yaml` 中的值改为 `"true"` 并推送到 Gitee，后端改用控制台中的用户。
 
 ### Loki（日志）
 
@@ -268,26 +317,26 @@ curl -s -G http://<IP>:3100/loki/api/v1/query_range --data-urlencode 'query={ser
 
 ## 常用操作
 
-服务名：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`gitea`、`nora`，以下以 `gitea` 为例。
+服务名：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora`，以下以 `r-nacos` 为例。
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc,cronjob -n yudao-mini -o wide
-kubectl --context kubernetes-admin@kubernetes describe pod -n yudao-mini -l app=gitea
-kubectl --context kubernetes-admin@kubernetes logs -f -n yudao-mini deployment/gitea
-kubectl --context kubernetes-admin@kubernetes rollout restart deployment/gitea -n yudao-mini
+kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc -n yudao-mini -o wide
+kubectl --context kubernetes-admin@kubernetes describe pod -n yudao-mini -l app=r-nacos
+kubectl --context kubernetes-admin@kubernetes logs -f -n yudao-mini deployment/r-nacos
+kubectl --context kubernetes-admin@kubernetes rollout restart deployment/r-nacos -n yudao-mini
 ```
 
 删除：
 
 ```bash
-# 全部服务，保留数据（PVC、Secret、命名空间保留）；启用 GitOps 时先暂停同步，否则 2 分钟内会被重新创建
-kubectl --context kubernetes-admin@kubernetes delete deployment,service,cronjob --all -n yudao-mini
+# 全部服务，保留数据（PVC、Secret、命名空间保留）；先 flux suspend kustomization yudao-mini，否则 2 分钟内会被重新创建
+kubectl --context kubernetes-admin@kubernetes delete deployment,service --all -n yudao-mini
 
-# 全部删除，连同数据（删除命名空间 yudao-mini，其中的 Secret、PVC、Gitea 仓库一并删除，数据不可恢复）
+# 全部删除，连同数据（删除命名空间 yudao-mini，其中的 Secret、PVC 一并删除；先 flux suspend kustomization yudao-mini，数据不可恢复）
 kubectl --context kubernetes-admin@kubernetes delete -k bootstrap
 ```
 
-Gitea 的仓库数据在 `gitea-data` PVC 中；删除前确认本机或 Gitee 上有完整副本。
+清单在 Gitee 上，删除集群资源不影响仓库。停用 Flux 同步：`kubectl --context kubernetes-admin@kubernetes delete -k clusters/<环境>`（Kustomization 被删除时 `prune` 会删除它同步过的资源，含 PVC，先确认）。
 
 ## 常见问题
 
@@ -297,23 +346,27 @@ Gitea 的仓库数据在 `gitea-data` PVC 中；删除前确认本机或 Gitee �
 
 解决：`kubectl --context kubernetes-admin@kubernetes -n yudao-mini describe secret yudao-env` 只看键名，按「Secret `yudao-env` 中用到的键」补齐 `.env` 后重建 Secret。
 
-### `gitops-sync` 报 `Authentication failed` / `not found`
+### GitRepository `yudao-env` 报 `authentication required` / `not found`
 
-原因：令牌错误或没有该仓库的读权限；或 `GITOPS_REPO_URL` 写成了节点 IP、仓库路径不对；或 `GITOPS_BRANCH` 在 Gitea 中不存在。
+原因：Secret `gitee-auth` 不存在、私人令牌错误或已过期；或 `clusters/<环境>/gitrepository.yaml` 的分支在 Gitee 上不存在。
 
-解决：在本机用 `git ls-remote http://<IP>:3000/<Gitea 用户>/yudao-env.git` 确认仓库和分支存在；地址用 Service 名 `http://gitea:3000/...`；令牌重新生成后按第 6 步重建 Secret。
+解决：本机 `git ls-remote https://gitee.com/imshaw/yudao-env.git <分支>` 确认分支存在；重新生成私人令牌后按第 5 步重建 `gitee-auth`（`flux create secret git` 会覆盖），再 `flux reconcile source git yudao-env`。
 
-### `gitops-sync` 报 `forbidden`
+### Kustomization `yudao-mini` 不是 READY
 
-原因：同步的清单里有 Namespace、ClusterRole 等集群级资源，或资源写了其他命名空间。`gitops-sync` 只有 `yudao-mini` 内的权限。
+`flux get kustomizations` 的 MESSAGE 列给出原因：构建失败（本机 `kubectl kustomize gitops-k8s-mini/overlays/<环境>` 复现）；健康检查超时（`wait: true`，某个 Deployment 未就绪，按下文排查对应 Pod）；`namespaces "yudao-mini" not found`（第 3 步的 `bootstrap` 未 apply）。
 
-解决：集群级资源放到 `bootstrap/` 手工 apply；同步的清单不要写 `namespace`，由 `kustomization.yaml` 统一添加。
+### Pod 拉取 ACR 镜像报 `unauthorized` / `pull access denied`
 
-### `alpine/k8s` 拉取失败
+原因：`yudao-mini` 中没有 `acr-auth`，或账号口令、ACR 地址（地域、个人版 / 企业版）不对；或默认 ServiceAccount 没有 `imagePullSecrets`（`bootstrap` 未重新 apply）。
 
-原因：`alpine/k8s` 的标签是 kubectl 版本，加速地址可能没有缓存该标签。
+解决：在节点上 `sudo crictl pull --creds <阿里云账号>:<ACR 固定密码> <ACR 镜像地址>` 验证；按第 6 步重建 `acr-auth`，再用 `kubectl --context kubernetes-admin@kubernetes -n yudao-mini get sa default -o yaml` 确认有 `acr-auth`。
 
-解决：`services/gitops-sync.yaml` 换成与集群版本相同或相邻的版本（kubectl 支持与服务端相差 ±1 个小版本），推送前在节点上 `sudo crictl pull docker.io/alpine/k8s:<版本>` 确认能拉取。注意：同步任务本身拉不到镜像时无法通过 Git 修复，需在服务器上直接 `kubectl --context kubernetes-admin@kubernetes apply -k .`（服务器目录先同步成新清单）。
+### Flux 控制器 `ImagePullBackOff`
+
+原因：`ghcr.io/fluxcd` 的镜像在国内拉不到，或 `--registry` 指向的加速源不代理。
+
+解决：按第 4 步在节点上 `crictl pull` 验证加速地址，换可用的地址后重新执行 `flux install ... --registry=<地址>`。
 
 ### loki 反复重启，日志 `permission denied`
 
@@ -327,22 +380,18 @@ Gitea 的仓库数据在 `gitea-data` PVC 中；删除前确认本机或 Gitee �
 
 解决：在管理控制台（15672）改密码；或确认没有数据后删除 rabbitmq 的 Deployment 和 PVC `rabbitmq-data`，下一次同步（或手工 `apply -k .`）会重新创建。
 
-### Gitea 管理员忘记口令
-
-```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/gitea -- su git -c "gitea admin user change-password --username <Gitea 用户> --password <新口令>"
-```
-
 ## 校验
 
 ```bash
-kubectl kustomize gitops-k8s-mini > /dev/null             # 离线渲染，不连接集群
+kubectl kustomize gitops-k8s-mini/overlays/local > /dev/null   # 离线渲染，不连接集群；dev、test、prod 同理
 kubectl kustomize gitops-k8s-mini/bootstrap > /dev/null
+kubectl kustomize gitops-k8s-mini/clusters/local > /dev/null
 ```
 
 ## 注意
 
 - 端口用 `hostPort` 暴露到节点所有网卡，只适合内网开发测试环境；loki、nora 不鉴权，r-nacos 客户端接口不鉴权。
-- `gitops-sync` 的 Role 拥有 `yudao-mini` 内全部权限（包括读取 Secret），能推送到同步分支的人等同于能操作整个命名空间，控制好 Gitea 仓库的写权限。
+- Flux 的 kustomize-controller 拥有集群管理员权限，能推送到 `feature/dev` / `main` 的人等同于能操作对应集群，控制好 Gitee 仓库的写权限；`main`（test / prod）建议开启分支保护，只允许合并请求。
+- Gitee 私人令牌、ACR 固定密码只放在集群 Secret 中，不写进仓库、`.env` 或提交信息。
 - `/opt/yudao/gitops-k8s-mini/.env` 含全部口令，保持 `600` 权限。
 - 删除 PVC 会丢失数据；`local-path` 的数据在节点 `/opt/local-path-provisioner`。

@@ -1,0 +1,17 @@
+# Git 来源：Gitee 上的 yudao-env 仓库，跟踪 main 分支，每分钟检查一次新提交
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: yudao-env
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://gitee.com/imshaw/yudao-env.git
+  ref:
+    branch: main
+  secretRef:
+    name: gitee-auth      # HTTPS 账号 + Gitee 私人令牌；仓库公开时删除这两行
+  ignore: |
+    # 只关心本目录，其他目录的提交不触发同步
+    /*
+    !/gitops-k8s-mini/
