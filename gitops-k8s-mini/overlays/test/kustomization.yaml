@@ -2,6 +2,7 @@
 # 由 ../../clusters/test/sync.yaml（Flux Kustomization）同步；只写本环境与 base 的差异
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: yudao-test   # 命名空间名 = yudao-<环境>（由 ../../bootstrap/test 创建）；以后转 Helm 时对应 helm -n
 resources:
   - ../../base
 # 镜像版本差异示例（ACR 中的应用镜像、或固定中间件版本）：

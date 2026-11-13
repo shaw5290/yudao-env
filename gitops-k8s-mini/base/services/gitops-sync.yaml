@@ -2,7 +2,7 @@
 # 【已停用】GitOps 改用 Flux CD + Gitee（见 ../../clusters/），../kustomization.yaml 中已注释掉本文件，保留备查
 # 由 ../kustomization.yaml 引用；最小的拉取式 GitOps：定时从 Gitea 浅克隆，对 GITOPS_PATH 执行 kubectl apply -k
 # 代替 Argo CD / Flux（不常驻进程、不占内存）；只新增 / 更新，不自动删除（删除见 README「GitOps 同步」）
-# ServiceAccount gitops-sync 及其 Role 在 ../../bootstrap/，只能操作命名空间 yudao-mini
+# ServiceAccount gitops-sync 及其 Role 在 ../../bootstrap/base/，只能操作本环境的命名空间
 # 同步脚本 ../config/gitops-sync.sh 经 configMapGenerator 生成 ConfigMap；仓库地址、Token 来自 Secret yudao-env
 apiVersion: batch/v1
 kind: CronJob

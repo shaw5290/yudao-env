@@ -1,8 +1,8 @@
-# 同步：把 overlays/local 应用到集群（命名空间 yudao-mini，由 ../../bootstrap 创建）
+# 同步：把 overlays/local 应用到集群（命名空间 yudao-local，由 ../../bootstrap/local 创建）
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: yudao-mini
+  name: yudao-local
   namespace: flux-system
 spec:
   interval: 2m            # 每 2 分钟与 Git 对齐一次（也会纠正集群中的手工改动）

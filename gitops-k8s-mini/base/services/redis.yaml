@@ -1,6 +1,6 @@
 # ==================== redis（每个服务一个文件）====================
 # 由 ../kustomization.yaml 引用，Flux 从 Gitee 拉取后自动 apply；从 gitops-k8s/services/redis.yaml 复制，两边分开维护
-# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+# 不写 namespace，由 ../../overlays/<环境>/kustomization.yaml 统一添加（命名空间 yudao-<环境>）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
 apiVersion: apps/v1
 kind: Deployment
 metadata:

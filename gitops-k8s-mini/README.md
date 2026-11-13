@@ -17,7 +17,7 @@
 本机 git push ──▶ Gitee（imshaw/yudao-env，目录 gitops-k8s-mini）
                      ▲  Flux source-controller 每分钟检查新提交（GitRepository yudao-env）
                      │
-   集群 <环境> ── Flux kustomize-controller ──▶ apply overlays/<环境>（命名空间 yudao-mini）
+   集群 <环境> ── Flux kustomize-controller ──▶ apply overlays/<环境>（命名空间 yudao-<环境>）
                      │
    ACR ◀── image-reflector-controller 扫描新 Tag ── image-automation-controller 把 Tag 提交回 Gitee（local / dev）
 ```
@@ -33,9 +33,9 @@
 
 - **更少、更轻**：postgresql、redis、rabbitmq、nora 保留；去掉 minio（文件改用数据库或本地存储）；Nacos 换成 r-nacos（Rust 实现，几十 MB 内存），Grafana LGTM 换成单独的 Loki（distroless，只存日志）。
 - **真正的 GitOps**：`gitops-k8s` 是上传文件后手工 `apply -k`；本目录由 Flux CD 从 Gitee 同步，以 Git 中的内容为准，服务器上不再手工 apply。Flux 常驻 4 个控制器（source、kustomize、image-reflector、image-automation），合计约 200~300 MB 内存。
-- **独立命名空间 `yudao-mini`**：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在 `yudao-mini` 中，用本目录的 `.env` 生成。
+- **命名空间 `yudao-<环境>`**（`yudao-local`、`yudao-dev`、`yudao-test`、`yudao-prod`，每个环境一个集群）：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在本环境命名空间中，用本目录的 `.env` 生成。
 - **多环境**：`base/` 是共用清单，`overlays/<环境>/` 只写差异，`clusters/<环境>/` 是该环境集群的 Flux 同步配置。
-- **引导资源单独一层**：命名空间、默认 ServiceAccount（挂 ACR 拉取凭证）在 `bootstrap/`，手工 apply 一次，不参与同步，避免一次错误提交把命名空间连同数据删掉。
+- **引导资源单独一层**：命名空间、默认 ServiceAccount（挂 ACR 拉取凭证）在 `bootstrap/<环境>/`（共用部分在 `bootstrap/base/`），手工 apply 一次，不参与同步，避免一次错误提交把命名空间连同数据删掉。
 - **配置文件进 ConfigMap**：`base/config/loki.yml` 由 `configMapGenerator` 生成，名称带内容哈希，改了文件后对应 Pod 自动滚动更新。
 - 沿用 `gitops-k8s` 的约定：变量名用镜像原生名、每个服务用 `secretKeyRef` 只取自己的键、端口写在清单的 `hostPort`、不使用 hostPath、依赖默认 StorageClass（local-path）。`base/services/` 下的 postgresql、redis、rabbitmq、nora 从 `gitops-k8s` 复制，两边分开维护，改镜像版本时注意同步。
 
@@ -54,17 +54,19 @@
 
 ```text
 gitops-k8s-mini/
-├── bootstrap/                 # 每个集群手工 apply 一次：Namespace yudao-mini、默认 ServiceAccount（imagePullSecrets acr-auth）
+├── bootstrap/                 # 每个集群手工 apply 一次 bootstrap/<环境>：Namespace yudao-<环境>、默认 ServiceAccount（imagePullSecrets acr-auth）
+│   ├── base/                  # 各环境共用的引导清单，不写 namespace
+│   └── <环境>/                # local、dev、test、prod：只指定 namespace
 ├── base/                      # 各环境共用
-│   ├── kustomization.yaml     # namespace、公共标签、services、configMapGenerator（gitea、gitops-sync 已注释）
+│   ├── kustomization.yaml     # 公共标签、services、configMapGenerator、PVC 防 prune 注解（不写 namespace；gitea、gitops-sync 已注释）
 │   ├── services/              # 每个服务一个文件（PVC + Deployment + Service）
 │   └── config/loki.yml        # Loki 配置，挂载为 /loki/etc/default.yml
-├── overlays/                  # 各环境差异：local、dev、test、prod（images / patches）
+├── overlays/                  # 各环境差异：local、dev、test、prod（namespace / images / patches）
 ├── clusters/                  # 各环境集群的 Flux 配置：local、dev、test、prod
 │   └── <环境>/
 │       ├── kustomization.yaml     # 手工 apply 一次的入口
 │       ├── gitrepository.yaml     # GitRepository yudao-env：Gitee 地址、分支、凭证 gitee-auth
-│       ├── sync.yaml              # Flux Kustomization yudao-mini：同步 overlays/<环境>
+│       ├── sync.yaml              # Flux Kustomization yudao-<环境>：同步 overlays/<环境>
 │       └── image-automation.yaml  # 仅 local、dev：ACR 镜像自动更新（默认未启用）
 ├── kustomization.yaml         # 兼容旧用法，等同于 overlays/local
 ├── .env.temp                  # Secret yudao-env 模板（提交）
@@ -107,13 +109,13 @@ rsync -av gitops-k8s-mini <用户>@<服务器>:/opt/yudao/
 
 ```bash
 cd /opt/yudao/gitops-k8s-mini
-kubectl --context kubernetes-admin@kubernetes apply -k bootstrap
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete secret yudao-env --ignore-not-found
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini create secret generic yudao-env --from-env-file=.env
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini describe secret yudao-env
+kubectl --context kubernetes-admin@kubernetes apply -k bootstrap/<环境>
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> delete secret yudao-env --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> create secret generic yudao-env --from-env-file=.env
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> describe secret yudao-env
 ```
 
-成功标准：命名空间 `yudao-mini`、ServiceAccount `default` 已创建；`describe secret` 列出下表中的键。服务由第 7 步的 Flux 部署，不再手工 `apply -k`（Flux 不可用时的应急方式：`kubectl --context kubernetes-admin@kubernetes apply -k overlays/<环境>`）。
+`<环境>` 换成本集群的环境名（`local`、`dev`、`test`、`prod`），下同。成功标准：命名空间 `yudao-<环境>`、ServiceAccount `default` 已创建；`describe secret` 列出下表中的键。服务由第 7 步的 Flux 部署，不再手工 `apply -k`（Flux 不可用时的应急方式：`kubectl --context kubernetes-admin@kubernetes apply -k overlays/<环境>`）。
 
 Secret `yudao-env` 中用到的键：
 
@@ -130,7 +132,7 @@ loki 不需要 Secret。Gitee、ACR 的凭证不放在 `yudao-env` 中，在第 
 PostgreSQL 表结构在第 7 步 postgresql 就绪后、空库上导入一次（脚本首行是 `\connect "ruoyi-vue-pro"`）。在本机 `yudao-env` 仓库根目录执行，SQL 经 ssh 直接传给 Pod：
 
 ```bash
-PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-mini deploy/postgresql -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
+PSQL='kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-<环境> deploy/postgresql -- sh -c "psql -U \$POSTGRES_USER -v ON_ERROR_STOP=1"'
 ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/02-yudao-schema.sql
 ssh <用户>@<服务器> "$PSQL" < config/postgres/initdb/03-yudao-quartz.sql
 ```
@@ -179,11 +181,11 @@ kubectl --context kubernetes-admin@kubernetes -n flux-system describe secret git
 应用镜像放在 ACR 时创建（只用公开镜像可跳过）。`<ACR 地址>` 个人版为 `registry.cn-<地域>.aliyuncs.com`，企业版为 `<实例名>-registry.cn-<地域>.cr.aliyuncs.com`；本地服务器不在阿里云 VPC 内，用公网地址，不要用 `registry-vpc`。账号为阿里云账号全名，口令为 ACR 控制台「访问凭证」中设置的固定密码：
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini create secret docker-registry acr-auth --docker-server=<ACR 地址> --docker-username=<阿里云账号> --docker-password=<ACR 固定密码>
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> create secret docker-registry acr-auth --docker-server=<ACR 地址> --docker-username=<阿里云账号> --docker-password=<ACR 固定密码>
 kubectl --context kubernetes-admin@kubernetes -n flux-system create secret docker-registry acr-auth --docker-server=<ACR 地址> --docker-username=<阿里云账号> --docker-password=<ACR 固定密码>
 ```
 
-- `yudao-mini` 中的 `acr-auth`：Pod 拉取 ACR 私有镜像，由 `bootstrap/default-serviceaccount.yaml` 挂到默认 ServiceAccount，清单中不用写 `imagePullSecrets`。
+- 本环境命名空间中的 `acr-auth`：Pod 拉取 ACR 私有镜像，由 `bootstrap/base/default-serviceaccount.yaml` 挂到默认 ServiceAccount，清单中不用写 `imagePullSecrets`。
 - `flux-system` 中的 `acr-auth`：image-reflector-controller 扫描 ACR Tag，只在启用镜像自动更新时需要。
 - 改口令时两处都先 `delete secret acr-auth --ignore-not-found` 再建。
 
@@ -194,19 +196,19 @@ cd /opt/yudao/gitops-k8s-mini
 kubectl --context kubernetes-admin@kubernetes apply -k clusters/local
 flux get sources git
 flux get kustomizations
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini get pods,svc,pvc -o wide
+kubectl --context kubernetes-admin@kubernetes -n yudao-local get pods,svc,pvc -o wide
 ```
 
-`local` 换成本集群对应的环境。成功标准：GitRepository `yudao-env` 和 Kustomization `yudao-mini` 都是 `READY True`，MESSAGE 中有当前提交号；`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora` 6 个 Pod 都是 `Running 1/1`，PVC 都是 `Bound`。之后按第 3 步末尾导入 PostgreSQL 表结构。
+`local` 换成本集群对应的环境。成功标准：GitRepository `yudao-env` 和 Kustomization `yudao-local` 都是 `READY True`，MESSAGE 中有当前提交号；`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora` 6 个 Pod 都是 `Running 1/1`，PVC 都是 `Bound`。之后按第 3 步末尾导入 PostgreSQL 表结构。
 
-**已用旧方式部署过的集群**（Gitea + gitops-sync）：旧的 `gitea`、`gitops-sync` 资源不在 Flux 的清单里，Flux 不会删除它们，确认 Gitee 上有完整的仓库副本后手工清理：
+**已用旧命名空间 `yudao-mini` 部署过的集群**（包括旧方式 Gitea + gitops-sync）：命名空间改为 `yudao-<环境>` 后，Flux 部署到新的命名空间，旧命名空间中的资源和 PVC 不会自动迁移，也不会被删除；两边 hostPort 相同，旧服务不停新 Pod 会一直 `Pending`。需要保留的数据（PostgreSQL 等）先从旧命名空间导出、导入新命名空间，确认 Gitee 上有完整的仓库副本后删除旧命名空间（其中的 Secret、PVC、Gitea 仓库一并删除，不可恢复）：
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete cronjob gitops-sync --ignore-not-found
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete deployment/gitea service/gitea --ignore-not-found
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete pvc gitea-data --ignore-not-found
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini delete -f bootstrap/gitops-sync-rbac.yaml --ignore-not-found
+kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/postgresql -- sh -c "pg_dump -U \$POSTGRES_USER -d ruoyi-vue-pro --clean --if-exists" > /tmp/ruoyi-vue-pro.sql
+kubectl --context kubernetes-admin@kubernetes delete namespace yudao-mini
 ```
+
+先执行第一条（PostgreSQL 无数据可跳过），再删除旧命名空间，最后执行第 3 步、第 7 步；新库就绪后用 `kubectl --context kubernetes-admin@kubernetes exec -i -n yudao-<环境> deploy/postgresql -- sh -c "psql -U \$POSTGRES_USER -d ruoyi-vue-pro"` 加 `< /tmp/ruoyi-vue-pro.sql` 导入（代替第 3 步末尾的表结构导入）。
 
 ### 8. 可选：ACR 镜像自动更新（local、dev）
 
@@ -225,19 +227,19 @@ Flux 的自动提交会推到 `feature/dev`，本机先 `git pull` 再改，避�
 - **改哪里**：所有环境共用的改 `base/`；只影响一个环境的改 `overlays/<环境>/`（`images`、`patches`）。提交前离线渲染：`kubectl kustomize gitops-k8s-mini/overlays/<环境>`。
 - **晋升**：local / dev 跟踪 `feature/dev`，test / prod 跟踪 `main`。在 local / dev 验证后，把 `overlays/test`（之后 `overlays/prod`）的镜像 Tag 改成验证过的版本，合并 `feature/dev` 到 `main` 并推送，test / prod 集群自动部署。`base/` 的改动合并到 `main` 后会同时影响 test 和 prod，先在 `overlays/test` 中验证。
 - **以 Git 为准**：在集群上 `kubectl edit`、`scale` 等手工改动会在下一次同步（2 分钟）时被改回。临时停止服务，在 `overlays/<环境>` 中用 patch 把 `replicas` 设为 0 并推送。
-- **删除会同步**：`prune: true`，从清单删除某个服务后 Flux 会删除对应资源，**包括 PVC 数据**，先备份。
+- **删除会同步**：`prune: true`，从清单删除某个服务后 Flux 会删除它的 Deployment、Service、ConfigMap；**PVC 除外**（`base/kustomization.yaml` 给 PVC 加了 `kustomize.toolkit.fluxcd.io/prune: disabled`），确认不再需要数据后手工 `kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> delete pvc <名称>`。
 - **Secret 不走 Git**：改 `.env` 后按第 3 步删除重建 Secret，再 `rollout restart` 对应服务（Secret 变化不会自动重启 Pod）。
 - **立即同步**（不等周期）：
 
   ```bash
-  flux reconcile kustomization yudao-mini --with-source
+  flux reconcile kustomization yudao-<环境> --with-source
   ```
 
 - **暂停 / 恢复同步**（排查问题时临时手工操作）：
 
   ```bash
-  flux suspend kustomization yudao-mini
-  flux resume kustomization yudao-mini
+  flux suspend kustomization yudao-<环境>
+  flux resume kustomization yudao-<环境>
   ```
 
 - **查看同步状态**：
@@ -252,7 +254,7 @@ Flux 的自动提交会推到 `feature/dev`，本机先 `git pull` 再改，避�
 
 ## 服务地址与账号
 
-`<IP>` 为 K8s 节点 IP。集群内同一命名空间直接用 Service 名，其他命名空间用 `<服务>.yudao-mini.svc.cluster.local`。
+`<IP>` 为 K8s 节点 IP。集群内同一命名空间直接用 Service 名，其他命名空间用 `<服务>.yudao-<环境>.svc.cluster.local`。
 
 | 服务 | 外部地址 | 集群内地址 | 账号 |
 |---|---|---|---|
@@ -266,15 +268,15 @@ Flux 的自动提交会推到 `feature/dev`，本机先 `git pull` 再改，避�
 查看 Secret 中的口令：
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini get secret yudao-env -o go-template='{{.data.RNACOS_INIT_ADMIN_PASSWORD | base64decode}}{{"\n"}}'
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> get secret yudao-env -o go-template='{{.data.RNACOS_INIT_ADMIN_PASSWORD | base64decode}}{{"\n"}}'
 ```
 
 检查服务是否可用：
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/postgresql -- pg_isready
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/redis -- redis-cli ping
-kubectl --context kubernetes-admin@kubernetes -n yudao-mini exec deploy/rabbitmq -- rabbitmq-diagnostics -q ping
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> exec deploy/postgresql -- pg_isready
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> exec deploy/redis -- redis-cli ping
+kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> exec deploy/rabbitmq -- rabbitmq-diagnostics -q ping
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:10848/
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:3100/ready
 curl -s -o /dev/null -w "%{http_code}\n" http://<IP>:4000/health
@@ -320,23 +322,23 @@ curl -s -G http://<IP>:3100/loki/api/v1/query_range --data-urlencode 'query={ser
 服务名：`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora`，以下以 `r-nacos` 为例。
 
 ```bash
-kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc -n yudao-mini -o wide
-kubectl --context kubernetes-admin@kubernetes describe pod -n yudao-mini -l app=r-nacos
-kubectl --context kubernetes-admin@kubernetes logs -f -n yudao-mini deployment/r-nacos
-kubectl --context kubernetes-admin@kubernetes rollout restart deployment/r-nacos -n yudao-mini
+kubectl --context kubernetes-admin@kubernetes get pods,svc,pvc -n yudao-<环境> -o wide
+kubectl --context kubernetes-admin@kubernetes describe pod -n yudao-<环境> -l app=r-nacos
+kubectl --context kubernetes-admin@kubernetes logs -f -n yudao-<环境> deployment/r-nacos
+kubectl --context kubernetes-admin@kubernetes rollout restart deployment/r-nacos -n yudao-<环境>
 ```
 
 删除：
 
 ```bash
-# 全部服务，保留数据（PVC、Secret、命名空间保留）；先 flux suspend kustomization yudao-mini，否则 2 分钟内会被重新创建
-kubectl --context kubernetes-admin@kubernetes delete deployment,service --all -n yudao-mini
+# 全部服务，保留数据（PVC、Secret、命名空间保留）；先 flux suspend kustomization yudao-<环境>，否则 2 分钟内会被重新创建
+kubectl --context kubernetes-admin@kubernetes delete deployment,service --all -n yudao-<环境>
 
-# 全部删除，连同数据（删除命名空间 yudao-mini，其中的 Secret、PVC 一并删除；先 flux suspend kustomization yudao-mini，数据不可恢复）
-kubectl --context kubernetes-admin@kubernetes delete -k bootstrap
+# 全部删除，连同数据（删除命名空间 yudao-<环境>，其中的 Secret、PVC 一并删除；先 flux suspend kustomization yudao-<环境>，数据不可恢复）
+kubectl --context kubernetes-admin@kubernetes delete -k bootstrap/<环境>
 ```
 
-清单在 Gitee 上，删除集群资源不影响仓库。停用 Flux 同步：`kubectl --context kubernetes-admin@kubernetes delete -k clusters/<环境>`（Kustomization 被删除时 `prune` 会删除它同步过的资源，含 PVC，先确认）。
+清单在 Gitee 上，删除集群资源不影响仓库。停用 Flux 同步：`kubectl --context kubernetes-admin@kubernetes delete -k clusters/<环境>`（Kustomization 被删除时 `prune` 会删除它同步过的资源，PVC 因带 `prune: disabled` 注解保留）。
 
 ## 常见问题
 
@@ -344,7 +346,7 @@ kubectl --context kubernetes-admin@kubernetes delete -k bootstrap
 
 原因：Secret `yudao-env` 不存在，或缺少该服务的必填键。
 
-解决：`kubectl --context kubernetes-admin@kubernetes -n yudao-mini describe secret yudao-env` 只看键名，按「Secret `yudao-env` 中用到的键」补齐 `.env` 后重建 Secret。
+解决：`kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> describe secret yudao-env` 只看键名，按「Secret `yudao-env` 中用到的键」补齐 `.env` 后重建 Secret。
 
 ### GitRepository `yudao-env` 报 `authentication required` / `not found`
 
@@ -352,15 +354,15 @@ kubectl --context kubernetes-admin@kubernetes delete -k bootstrap
 
 解决：本机 `git ls-remote https://gitee.com/imshaw/yudao-env.git <分支>` 确认分支存在；重新生成私人令牌后按第 5 步重建 `gitee-auth`（`flux create secret git` 会覆盖），再 `flux reconcile source git yudao-env`。
 
-### Kustomization `yudao-mini` 不是 READY
+### Flux Kustomization `yudao-<环境>` 不是 READY
 
-`flux get kustomizations` 的 MESSAGE 列给出原因：构建失败（本机 `kubectl kustomize gitops-k8s-mini/overlays/<环境>` 复现）；健康检查超时（`wait: true`，某个 Deployment 未就绪，按下文排查对应 Pod）；`namespaces "yudao-mini" not found`（第 3 步的 `bootstrap` 未 apply）。
+`flux get kustomizations` 的 MESSAGE 列给出原因：构建失败（本机 `kubectl kustomize gitops-k8s-mini/overlays/<环境>` 复现）；健康检查超时（`wait: true`，某个 Deployment 未就绪，按下文排查对应 Pod）；`namespaces "yudao-<环境>" not found`（第 3 步的 `bootstrap/<环境>` 未 apply）。
 
 ### Pod 拉取 ACR 镜像报 `unauthorized` / `pull access denied`
 
-原因：`yudao-mini` 中没有 `acr-auth`，或账号口令、ACR 地址（地域、个人版 / 企业版）不对；或默认 ServiceAccount 没有 `imagePullSecrets`（`bootstrap` 未重新 apply）。
+原因：本环境命名空间中没有 `acr-auth`，或账号口令、ACR 地址（地域、个人版 / 企业版）不对；或默认 ServiceAccount 没有 `imagePullSecrets`（`bootstrap/<环境>` 未重新 apply）。
 
-解决：在节点上 `sudo crictl pull --creds <阿里云账号>:<ACR 固定密码> <ACR 镜像地址>` 验证；按第 6 步重建 `acr-auth`，再用 `kubectl --context kubernetes-admin@kubernetes -n yudao-mini get sa default -o yaml` 确认有 `acr-auth`。
+解决：在节点上 `sudo crictl pull --creds <阿里云账号>:<ACR 固定密码> <ACR 镜像地址>` 验证；按第 6 步重建 `acr-auth`，再用 `kubectl --context kubernetes-admin@kubernetes -n yudao-<环境> get sa default -o yaml` 确认有 `acr-auth`。
 
 ### Flux 控制器 `ImagePullBackOff`
 
@@ -380,11 +382,39 @@ kubectl --context kubernetes-admin@kubernetes delete -k bootstrap
 
 解决：在管理控制台（15672）改密码；或确认没有数据后删除 rabbitmq 的 Deployment 和 PVC `rabbitmq-data`，下一次同步（或手工 `apply -k .`）会重新创建。
 
+## 以后转 Helm
+
+当前用 Kustomize（base + overlays），清单已按下面的对应关系组织，以后可以直接改写成 Helm chart，PVC 数据保留。
+
+| 现在（Kustomize） | 转 Helm 后 |
+|---|---|
+| `base/services/*.yaml` | `chart/templates/*.yaml`，镜像、副本数、端口、PVC 大小换成 `{{ .Values.xxx }}` |
+| `overlays/<环境>/` 的 `namespace` | `helm upgrade --install -n <命名空间>`（base 中不写 namespace，模板中也不写） |
+| `overlays/<环境>/` 的 `images`、`patches` | `values-<环境>.yaml`（如 `loki.image.tag`、`loki.replicas`）；公共默认值放 `values.yaml` |
+| `base/kustomization.yaml` 的 `labels` | `_helpers.tpl` 中的公共标签 |
+| `configMapGenerator`（名称带哈希，改配置自动滚动更新） | `.Files.Get` 生成固定名称的 ConfigMap，Pod 模板加注解 `checksum/config: {{ include (print $.Template.BasePath "/xxx.yaml") . \| sha256sum }}` |
+| Flux `Kustomization`（`clusters/<环境>/sync.yaml`） | Flux `HelmRelease`，`chart` 引用同一个 GitRepository 中的 chart 目录，`valuesFiles` 指向 `values-<环境>.yaml` |
+| PVC 注解 `kustomize.toolkit.fluxcd.io/prune: disabled` | 保留，并加 `helm.sh/resource-policy: keep`（`helm uninstall` 不删 PVC） |
+| Secret `yudao-env`、`acr-auth`、`bootstrap/` | 不变，仍手工创建，chart 只引用 |
+
+写 chart 时必须保持不变，否则会重建资源或丢数据：
+
+- **资源名**：Deployment、Service、PVC 的名称与现在相同（不要用 `{{ .Release.Name }}-xxx` 前缀），PVC 才能按原名接上数据。
+- **selector**：Deployment 的 `selector.matchLabels` 保持 `app: <服务名>`（selector 不可修改，改了只能删除重建）；Helm 推荐的 `app.kubernetes.io/name`、`app.kubernetes.io/instance` 只加到 metadata 和 Pod 模板，不加进 selector。
+
+切换步骤（在一个环境验证后再做下一个，先 local / dev）：
+
+1. 本机 `helm template` 渲染 chart，与 `kubectl kustomize gitops-k8s-mini/overlays/<环境>` 对比，除标签、注解、ConfigMap 名称外应一致。
+2. `flux suspend kustomization yudao-<环境>`。
+3. 给现有资源加 Helm 归属，`helm install` 才能接管（否则报 `invalid ownership metadata`）：标签 `app.kubernetes.io/managed-by=Helm`，注解 `meta.helm.sh/release-name=<release>`、`meta.helm.sh/release-namespace=yudao-<环境>`，对象为 Deployment、Service、PVC、ConfigMap。
+4. 删除 Flux Kustomization（`kubectl delete -f clusters/<环境>/sync.yaml`）；Deployment 等会被 prune，PVC 因注解保留。为避免服务中断，也可以先在 Kustomization 中设 `prune: false` 并推送，再删除。
+5. apply HelmRelease，确认 Pod 挂载的是原 PVC、数据还在；旧的带哈希 ConfigMap 手工删除。
+
 ## 校验
 
 ```bash
 kubectl kustomize gitops-k8s-mini/overlays/local > /dev/null   # 离线渲染，不连接集群；dev、test、prod 同理
-kubectl kustomize gitops-k8s-mini/bootstrap > /dev/null
+kubectl kustomize gitops-k8s-mini/bootstrap/local > /dev/null
 kubectl kustomize gitops-k8s-mini/clusters/local > /dev/null
 ```
 

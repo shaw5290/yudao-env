@@ -296,7 +296,7 @@ yudao-env/
 │   ├── schemes/                # 方案：core/、middleware/、all/（kustomization.yaml）
 │   └── .render/                # 菜单启动单个服务时生成的临时方案（不提交）
 ├── gitops-k8s/                 # 自包含 GitOps 方案（postgres redis nacos rabbitmq minio lgtm nora），不用 hostPath，上传到服务器 /opt/yudao/gitops-k8s 后 apply -k；env 用本目录 .env.temp 复制出的 .env，与根目录 .env.temp 分开维护
-├── gitops-k8s-mini/            # 最小 GitOps 环境（postgresql redis rabbitmq r-nacos loki nora），Flux CD 从 Gitee 同步、镜像用 ACR；base/ + overlays/<local|dev|test|prod>/ + clusters/<环境>/（Flux 配置）+ bootstrap/；gitea、gitops-sync 已停用（清单保留、引用已注释）
+├── gitops-k8s-mini/            # 最小 GitOps 环境（postgresql redis rabbitmq r-nacos loki nora），Flux CD 从 Gitee 同步、镜像用 ACR；base/ + overlays/<local|dev|test|prod>/ + clusters/<环境>/（Flux 配置）+ bootstrap/<环境>/（命名空间 yudao-<环境>）；gitea、gitops-sync 已停用（清单保留、引用已注释）
 ├── config/                     # compose 与 k8s 共用的挂载文件
 │   ├── mysql/initdb/           # MySQL 首次初始化脚本（01 建库建用户 ~ 06 Quartz）
 │   ├── postgres/initdb/        # PostgreSQL 首次初始化脚本（01 建库 ~ 03 Quartz）

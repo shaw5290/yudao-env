@@ -39,6 +39,8 @@ compose/**/docker-compose.override.yml
 !.env.temp
 # gitops-k8s 早期使用的口令文件名（现在统一用 .env）
 gitops-k8s/*.env
+# 口令文件的可编辑副本（AI 助手读写不了 .env，更新写这里，再复制为 .env），任意目录
+#env_local
 
 # ===== 批处理脚本（本机用，按需放开）=====
 # compose/yudao.bat

@@ -1,7 +1,7 @@
 # ==================== gitea（每个服务一个文件）====================
 # 【已停用】GitOps 改用 Flux CD + Gitee（见 ../../clusters/），../kustomization.yaml 中已注释掉本文件，保留备查
 # 由 ../kustomization.yaml 引用，gitops-sync 从 Gitea 拉取后自动 apply（Gitea 托管的就是这些清单本身）
-# 不写 namespace，由 ../kustomization.yaml 统一添加（yudao-mini）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+# 不写 namespace，由 ../../overlays/<环境>/kustomization.yaml 统一添加（命名空间 yudao-<环境>）；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
 # 最小配置：内置 SQLite（不依赖 MySQL / PostgreSQL），只开 HTTP（不开 SSH），关闭注册和软件包（制品统一放 NORA）
 # 配置项用 GITEA__<section>__<KEY> 环境变量写入 /data/gitea/conf/app.ini，每次启动都会覆盖对应项
 apiVersion: v1

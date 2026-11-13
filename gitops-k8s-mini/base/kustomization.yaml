@@ -1,9 +1,9 @@
 # ==================== GitOps 最小环境 base：postgresql、redis、rabbitmq、r-nacos、loki、nora ====================
 # 各环境共用；环境差异（镜像 Tag、副本数、patches）只写在 ../overlays/<环境>/，不改这里
 # 同步由 Flux CD 从 Gitee 拉取（../clusters/<环境>/），Secret yudao-env 不入库，部署前手工创建，见 ../README.md
+# 不写 namespace：由 ../overlays/<环境>/ 指定（以后转 Helm 时对应 helm -n），见 ../README.md「以后转 Helm」
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: yudao-mini
 labels:
   - pairs:
       app.kubernetes.io/part-of: yudao-env-mini
@@ -25,3 +25,11 @@ configMapGenerator:
   # - name: gitops-sync-script        # 已停用：随 gitops-sync 一起停用
   #   files:
   #     - sync.sh=config/gitops-sync.sh
+# PVC 不随 prune 删除：从 Git 删掉服务、删除 Flux Kustomization（如以后切换到 HelmRelease）时保留数据，不再需要的 PVC 手工删除
+patches:
+  - target: { kind: PersistentVolumeClaim }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          kustomize.toolkit.fluxcd.io/prune: disabled

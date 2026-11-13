@@ -1,0 +1,15 @@
+# ==================== 引导资源 base（各环境共用，不直接 apply） ====================
+#   kubectl --context <集群上下文> apply -k gitops-k8s-mini/bootstrap/<环境>   # 每个集群手工 apply 一次，不参与自动同步
+# 不写 namespace：由 ../<环境>/kustomization.yaml 指定，Namespace 对象名、RoleBinding 的 subjects 一并改写为 yudao-<环境>
+# 命名空间、默认 ServiceAccount（ACR 拉取凭证）放在这里，不参与 Flux 同步：
+# 避免一次错误提交把命名空间（连同 PVC 数据）删掉；Flux 本身的安装和同步配置见 ../../clusters/<环境>/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: yudao-env-mini
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - default-serviceaccount.yaml
+  # - gitops-sync-rbac.yaml   # 已停用：同步改用 Flux CD，不再需要 gitops-sync 的权限

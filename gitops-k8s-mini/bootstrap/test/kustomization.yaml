@@ -1,0 +1,7 @@
+# ==================== 环境 test 的引导资源（手工 apply 一次，不参与自动同步） ====================
+#   kubectl --context <集群上下文> apply -k gitops-k8s-mini/bootstrap/test
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: yudao-test   # 命名空间名 = yudao-<环境>，与 ../../overlays/test 一致
+resources:
+  - ../base
