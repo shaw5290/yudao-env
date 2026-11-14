@@ -1,0 +1,17 @@
+# ==================== 基础环境：postgresql、gitea、registry（镜像仓库） ====================
+# 目标集群：自建 kubeadm 单机集群（k8s-master，Ubuntu 24.04），命名空间 yudao-local
+# 手工部署，不参与 Flux 同步：Flux 要连的 Git 服务、要扫的镜像仓库都在这里，自己同步自己没有意义
+#   kubectl apply -k k8s-base
+# Secret yudao-env 与 .env 都不入库，部署前由 ops/apply-env.sh 从 .env 创建，见 README.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: yudao-local   # 与应用（yudao-gitops 的 apps/*）同一命名空间：Flux 的 GitRepository 用 gitea.yudao-local.svc.cluster.local
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: yudao-base
+    includeSelectors: false   # 只加到 metadata，不改 selector（Deployment 的 selector 不可变）
+resources:
+  - namespace.yaml
+  - services/postgresql.yaml
+  - services/gitea.yaml
+  - services/registry.yaml

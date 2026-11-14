@@ -1,0 +1,5 @@
+# ================= k8s-base 本地忽略 =================
+# 由 .env 生成，含口令
+.env
+# Gitea 访问令牌（ops/gitea-bootstrap.sh 生成，Gitea 只显示一次）
+.gitea-token

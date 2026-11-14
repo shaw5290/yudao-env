@@ -1,0 +1,6 @@
+# ==================== 命名空间 ====================
+# 应用（yudao-gitops 的 apps/*）也在这个命名空间，保持与旧环境一致；中间件地址形如 postgresql.yudao-local.svc.cluster.local
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yudao-local

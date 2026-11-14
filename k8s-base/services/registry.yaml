@@ -1,0 +1,85 @@
+# ==================== registry（Docker Registry v2，CI 推送 / Flux 镜像扫描）====================
+# 由 ../kustomization.yaml 引用
+# 地址固定为 10.10.10.10:5000：这个地址是 fixed-ip-k8s 建的 dummy0 固定地址，不随路由器 DHCP 变化
+# 镜像名里带地址，地址一变 GitOps 清单就得跟着改，所以这里必须用固定地址而不是局域网 IP
+# 只走 HTTP：必须在节点上配 containerd 的 insecure registry（bootstrap/containerd-registry.sh），否则 kubelet 拉取失败
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  labels:
+    app: registry
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      containers:
+        - name: registry
+          image: registry:2
+          ports:
+            - containerPort: 5000
+              hostPort: 5000   # 宿主机 0.0.0.0:5000，因此 10.10.10.10:5000 与局域网 IP:5000 都能访问
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: REGISTRY_HTTP_ADDR
+              value: 0.0.0.0:5000
+            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+              value: /var/lib/registry
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"   # 允许按 Tag 删镜像，清理旧构建
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: registry-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+spec:
+  selector:
+    app: registry
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000

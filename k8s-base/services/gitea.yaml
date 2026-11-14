@@ -1,0 +1,150 @@
+# ==================== gitea（Git 服务 + Actions 触发源）====================
+# 由 ../kustomization.yaml 引用；数据库用同命名空间的 postgresql（不用内置 SQLite，便于备份与迁移）
+# 只开 HTTP（DISABLE_SSH），端口 3000 不透出 SSH，换网换 IP 不用改 SSH 端口映射
+# ROOT_URL 影响页面链接、HTTP 克隆地址和 Actions 回调，写的是当前局域网 IP，换网后跑 ops/gitea-root-url.sh 更新
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitea-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 仓库目录只允许单实例写入
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      initContainers:
+        # 等 postgresql 能接受连接再启动，避免 Gitea 首次启动因连不上库反复重启
+        - name: wait-postgresql
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgresql -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for postgresql; sleep 3; done
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_DB }
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_PASSWORD }
+      containers:
+        - name: gitea
+          image: gitea/gitea:28.3.0
+          ports:
+            - containerPort: 3000
+              hostPort: 3000   # 宿主机端口：http://<节点IP>:3000/，冲突时改这里
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: USER_UID
+              value: "1000"
+            - name: USER_GID
+              value: "1000"
+            # ---- 数据库：全部取自 Secret yudao-env，复用 POSTGRES_*，不再单独维护一套 Gitea 口令 ----
+            - name: GITEA__database__DB_TYPE
+              value: postgres
+            - name: GITEA__database__HOST
+              value: postgresql.yudao-local.svc.cluster.local:5432   # 写完整域名，Gitea 不做 search 域补全
+            - name: GITEA__database__NAME
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_DB }
+            - name: GITEA__database__USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_USER }
+            - name: GITEA__database__PASSWD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_PASSWORD }
+            - name: GITEA__database__SSL_MODE
+              value: disable   # 集群内网，PostgreSQL 未开 TLS
+            # ---- 站点 ----
+            - name: GITEA__server__PROTOCOL
+              value: http
+            - name: GITEA__server__HTTP_PORT
+              value: "3000"
+            - name: GITEA__server__DISABLE_SSH
+              value: "true"    # 只用 HTTP 克隆 / 推送，IP 变了也不用改端口映射
+            - name: GITEA__server__ROOT_URL
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: GITEA__server__ROOT_URL }
+            - name: GITEA__security__INSTALL_LOCK
+              value: "true"    # 跳过安装向导，管理员用 gitea admin user create 创建（ops/gitea-bootstrap.sh）
+            - name: GITEA__security__SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: GITEA__security__SECRET_KEY }
+            - name: GITEA__service__DISABLE_REGISTRATION
+              value: "true"    # 关闭自助注册，账号由管理员创建
+            - name: GITEA__repository__ENABLE_PUSH_CREATE_USER
+              value: "true"    # 推送到不存在的个人仓库时自动创建
+            # ---- Actions：act_runner 注册和任务派发依赖它 ----
+            - name: GITEA__actions__ENABLED
+              value: "true"
+            # 不设 DEFAULT_ACTIONS_URL：Gitea 28 只接受 github（gitea.com 已不支持），且本机访问不到 github.com，
+            # 所以工作流里不要用 actions/checkout 等市场 Action，一律用 shell 命令，见 yudao-gitops/README
+            # ---- 其他 ----
+            - name: GITEA__packages__ENABLED
+              value: "false"   # 镜像走独立的 registry，不占 Gitea 的包仓库
+            - name: GITEA__ui__DEFAULT_THEME
+              value: gitea-auto
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 60   # 首次启动要跑数据库迁移，最多等 5 分钟
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+spec:
+  selector:
+    app: gitea
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

@@ -1,0 +1,86 @@
+# ==================== postgresql（Gitea 的数据库）====================
+# 由 ../kustomization.yaml 引用；不使用 hostPath，敏感值来自手工创建的 Secret yudao-env
+# 首次初始化只建 POSTGRES_DB 一个库（当前是 gitea）；后端业务库以后用 createdb 补，见 README「后端中间件」
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  labels:
+    app: postgresql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 单实例写同一个数据目录，禁止新旧 Pod 交替
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              hostPort: 5432   # 宿主机端口（便于本机 psql 直连），冲突时改这里
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            # 以下取自 Secret yudao-env，键名与 postgres 镜像原生变量一致
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_DB }
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: POSTGRES_PASSWORD }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgresql-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+spec:
+  selector:
+    app: postgresql
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
