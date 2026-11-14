@@ -169,7 +169,7 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 </mirrors>
 ```
 
-`mvn deploy` 发布时，在 pom 的 `distributionManagement` 中把 `repository` 和 `snapshotRepository` 都指向 `http://127.0.0.1:4000/maven2/`（NORA 不区分 release / snapshot 仓库）。开启鉴权后，在 `settings.xml` 的 `<servers>` 里为对应 id 配置账号。注意：release 版本不可覆盖，同一版本重复上传返回 `409`；SNAPSHOT 依赖 Maven 自己上传的 `maven-metadata.xml`，NORA 不会自动生成。
+`mvn deploy` 发布时，在 pom 的 `distributionManagement` 中把 `repository` 和 `snapshotRepository` 都指向 `http://127.0.0.1:4000/maven2/`（NORA 不区分 release / snapshot 仓库）。开启鉴权后，在 `settings.xml` 的 `<servers>` 里为对应 id 配置账号。注意：release 版本不可覆盖，同一版本重复上传返回 `409`（实测）；`-SNAPSHOT` 版本同路径重复上传返回 `201` 可覆盖，`maven-metadata.xml` 也可覆盖，所以开发期用 SNAPSHOT 不会撞 409。NORA 不区分 release / snapshot 仓库，也不会自动生成或合并 `maven-metadata.xml`（依赖 Maven 自己上传），更不做 `-SNAPSHOT` 到时间戳的别名解析，客户端要靠 metadata 自己解析。
 
 **npm**：`npm config set registry http://127.0.0.1:4000/npm/`（pnpm 同理）。返回的 tarball 下载地址按 `NORA_PUBLIC_URL` 生成，所以局域网其他机器访问时，要把它改成宿主机 IP 并重建容器。
 

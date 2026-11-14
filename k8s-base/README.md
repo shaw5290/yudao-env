@@ -8,12 +8,12 @@
 | --- | --- | --- | --- | --- |
 | postgresql | `postgres:16-alpine` | Gitea 的数据库（库名 `gitea`） | `postgresql.yudao-local.svc.cluster.local:5432`、宿主机 5432 | `postgresql-data` 5Gi |
 | gitea | `gitea/gitea:28.3.0` | Git 仓库、Actions 触发源 | `http://<节点IP>:3000/`、`gitea.yudao-local.svc.cluster.local:3000` | `gitea-data` 5Gi |
-| nora | `ghcr.io/getnora-io/nora:1.4.4`（**单容器直出**） | Docker Registry v2 hosted + Maven/npm 代理；CI 推镜像、Flux 扫 Tag | **`10.10.10.10:4000`**（HTTP，NORA 自身 `hostPort: 4000`） | `nora-data` 20Gi |
+| nora | `ghcr.io/getnora-io/nora:1.4.4`（**单容器直出**） | Docker `/v2/` hosted + Maven `/maven2/` **hosted + 上游代理** + npm 代理；CI 推镜像、`mvn deploy` 发 jar、Flux 扫 Tag | **`10.10.10.10:4000`**（HTTP，NORA 自身 `hostPort: 4000`） | `nora-data` 20Gi |
 | act-runner | `gitea/act_runner` + `docker:dind` | Gitea Actions 执行器（host 模式），同 Pod 内 dind 提供 Docker daemon | 无对外端口 | 注册信息在 `/data/.runner` |
 | portal | `nginx:stable-alpine`（**单容器**） | 内网服务引导页：地址、账号、口令、换网说明的统一入口 | `http://<节点IP>:8080/`（`hostPort: 8080`） | 无（页面在 ConfigMap `portal-html`） |
 | flux（6 个控制器） | `ghcr.io/fluxcd/*` | source / kustomize / helm / notification / image-reflector / image-automation | 命名空间 `flux-system` | 无 |
 
-> **为什么用 NORA 而不是 `registry:2`**：`gitops-k8s-mini/base/services/nora.yaml` 和 `env_local` 里已有 `NORA_PUBLIC_URL` / `NORA_DOCKER_PROXIES` 的约定，NORA 同时承担 Maven / npm 代理。另起一个 `registry:2` 属于重复建设；`services/registry.yaml` 仅保留备查，已从 `kustomization.yaml` 注释掉。
+> **为什么用 NORA 而不是 `registry:2`**：`gitops-k8s-mini/base/services/nora.yaml` 和 `env_local` 里已有 `NORA_PUBLIC_URL` / `NORA_DOCKER_PROXIES` 的约定，NORA 同时承担 Maven hosted（`/maven2/`，实测 PUT 201 / GET 200，release 不可覆盖 409、`-SNAPSHOT` 可重复 PUT 201；只有一个 hosted 命名空间，`repository` 与 `snapshotRepository` 同址）与 npm 代理，所以后端拆仓后的 `mvn deploy` 直接用它，不需要 Gitea Packages。另起一个 `registry:2` 属于重复建设；`services/registry.yaml` 仅保留备查，已从 `kustomization.yaml` 注释掉。
 
 ## 访问地址与默认凭据
 
