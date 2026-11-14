@@ -1,0 +1,17 @@
+[Unit]
+Description=Fixed dummy0 interface for Kubernetes control-plane identity
+DefaultDependencies=no
+Before=kubelet.service network-pre.target shutdown.target
+After=systemd-modules-load.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/modprobe dummy
+ExecStart=-/sbin/ip link add dummy0 type dummy
+ExecStart=-/sbin/ip addr add 10.10.10.10/32 dev dummy0
+ExecStart=/sbin/ip link set dummy0 up
+
+[Install]
+WantedBy=multi-user.target

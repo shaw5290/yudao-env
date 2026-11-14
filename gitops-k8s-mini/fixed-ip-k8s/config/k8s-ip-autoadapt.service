@@ -1,0 +1,16 @@
+[Unit]
+Description=Adapt kube-apiserver certificate SAN to current LAN IP
+Documentation=file:///root/k8s-README.md
+After=network-online.target kubelet.service
+Wants=network-online.target
+ConditionPathExists=/etc/kubernetes/pki/apiserver.crt
+
+[Service]
+Type=oneshot
+ExecStartPre=-/sbin/modprobe dummy
+ExecStart=/usr/local/bin/k8s-allow-ip.sh
+RemainAfterExit=yes
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
