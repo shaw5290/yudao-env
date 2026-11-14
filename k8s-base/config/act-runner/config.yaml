@@ -1,0 +1,34 @@
+# ==================== act_runner 配置（host 模式）====================
+# 对应 act_runner v0.6.1 的 generate-config 字段；由 ../kustomization.yaml 的 configMapGenerator 生成
+# host 模式：job 直接在 runner 容器内执行（不额外拉 docker.gitea.com/runner-images），
+#           由同 Pod 的 dind 提供 docker build 能力，docker CLI 从 dind 镜像拷进 /docker-bin
+log:
+  level: info
+
+runner:
+  file: /data/.runner          # 注册结果持久化到 PVC，Pod 重建不用重新注册
+  capacity: 1                  # 单机 4C/14G，一次只跑一个构建任务
+  envs:                        # 注入到 job 的环境变量
+    DOCKER_HOST: tcp://127.0.0.1:2375
+    DOCKER_BUILDKIT: "1"
+    DOCKER_TLS_CERTDIR: ""
+  timeout: 3h
+  insecure: true               # Gitea 是 HTTP，跳过 TLS 校验
+  fetch_interval: 2s
+  fetch_interval_max: 5s
+  labels:
+    - "ubuntu-latest:host"     # workflow 里的 runs-on: ubuntu-latest 落到本机执行
+
+cache:
+  enabled: false               # 不用 actions/cache，避免额外起 cache server
+
+container:
+  # host 模式下用不到任务容器，但显式指向 dind，避免 act_runner 自动探测 docker daemon 失败
+  docker_host: "tcp://127.0.0.1:2375"
+  require_docker: false
+  privileged: false
+
+host:
+  # 必须用绝对路径：act 写脚本用这个路径，执行时却把 cmd.Dir 切到 job 子目录，
+  # 相对路径会变成 data/work/<id>/act/data/work/...，导致 bash: ... workflow/0.sh: No such file or directory
+  workdir_parent: /data/work  # 落在 PVC 上，job 脚本和检出代码都在这里

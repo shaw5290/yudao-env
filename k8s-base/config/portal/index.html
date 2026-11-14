@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>yudao 本地环境 · 服务引导</title>
+<style>
+  :root {
+    --brand: #e1251b;
+    --brand-soft: #fff1f0;
+    --text: #1f2329;
+    --text-2: #4e5969;
+    --text-3: #86909c;
+    --line: #e5e6eb;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ok: #00a870;
+    --warn: #d46b08;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topbar { height: 4px; background: var(--brand); }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+  .header-inner {
+    max-width: 1180px; margin: 0 auto; padding: 22px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .logo {
+    width: 42px; height: 42px; flex: none; border-radius: 8px;
+    background: var(--brand); color: #fff; font-size: 22px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .3px; }
+  .subtitle { color: var(--text-3); font-size: 13px; margin-top: 2px; }
+  .header-right { margin-left: auto; text-align: right; font-size: 12px; color: var(--text-3); }
+  .host-badge {
+    display: inline-block; background: var(--brand-soft); color: var(--brand);
+    border: 1px solid #ffccc7; border-radius: 4px; padding: 3px 10px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; font-weight: 600;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 24px 48px; }
+  .notice {
+    background: #fffbe6; border: 1px solid #ffe58f; border-left: 4px solid #faad14;
+    border-radius: 6px; padding: 14px 18px; margin-bottom: 24px; font-size: 13px; color: var(--text-2);
+  }
+  .notice strong { color: var(--text); }
+  .notice p { margin: 0 0 6px; }
+  .notice p:last-child { margin-bottom: 0; }
+  section { margin-bottom: 28px; }
+  .section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  h2 { font-size: 16px; margin: 0; padding-left: 10px; border-left: 3px solid var(--brand); line-height: 1.3; }
+  .section-note { font-size: 12px; color: var(--text-3); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px 18px; transition: box-shadow .18s, transform .18s, border-color .18s;
+    display: flex; flex-direction: column; min-height: 176px;
+  }
+  .card:hover { box-shadow: 0 6px 18px rgba(0,0,0,.07); transform: translateY(-2px); border-color: #d0d3d9; }
+  .card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .tag {
+    flex: none; min-width: 46px; text-align: center; padding: 2px 7px; border-radius: 4px;
+    background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  }
+  .card-name { font-size: 15px; font-weight: 600; }
+  .card-sub { font-size: 12px; color: var(--text-3); margin-left: auto; }
+  .card-addr {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px;
+    background: #f7f8fa; border: 1px solid var(--line); border-radius: 4px;
+    padding: 7px 9px; margin-bottom: 9px; display: flex; align-items: center; gap: 8px;
+    word-break: break-all;
+  }
+  .card-addr a { flex: 1; min-width: 0; word-break: break-all; }
+  .card-addr .plain { flex: 1; min-width: 0; color: var(--text); }
+  .card-desc { font-size: 12px; color: var(--text-2); flex: 1; margin-bottom: 10px; }
+  .card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 11px; border-radius: 3px; padding: 2px 7px; border: 1px solid transparent; white-space: nowrap; }
+  .badge.ok { color: var(--ok); background: #e8fff6; border-color: #b7ebd8; }
+  .badge.tcp { color: var(--text-2); background: #f2f3f5; border-color: var(--line); }
+  .badge.warn { color: var(--warn); background: #fff7e8; border-color: #ffd591; }
+  .cred-inline { font-size: 12px; color: var(--text-2); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .btn {
+    border: 1px solid var(--line); background: #fff; color: var(--text-2); cursor: pointer;
+    border-radius: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--brand); color: var(--brand); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.primary:hover { opacity: .88; color: #fff; }
+  .btn.copied { color: var(--ok); border-color: var(--ok); }
+  .repo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .repo {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px;
+  }
+  .repo-name { font-weight: 600; font-size: 14px; }
+  .repo-meta { font-size: 12px; color: var(--text-3); margin: 4px 0 8px; }
+  .repo-line { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+  th { background: #fafbfc; color: var(--text-2); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td code, .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+  .secret { color: var(--brand); font-weight: 600; }
+  .muted { color: var(--text-3); }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .info-box { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; font-size: 13px; color: var(--text-2); }
+  .info-box h3 { font-size: 13px; margin: 0 0 8px; color: var(--text); }
+  .info-box ul { margin: 0; padding-left: 18px; }
+  .info-box li { margin-bottom: 4px; }
+  .steps { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px 16px 40px; margin: 0; font-size: 13px; color: var(--text-2); }
+  .steps li { margin-bottom: 6px; }
+  footer { border-top: 1px solid var(--line); background: var(--card); }
+  .footer-inner { max-width: 1180px; margin: 0 auto; padding: 16px 24px; font-size: 12px; color: var(--text-3); display: flex; gap: 16px; flex-wrap: wrap; }
+  @media (max-width: 640px) {
+    .header-right { margin-left: 0; text-align: left; }
+    .grid, .repo-list, .info-grid { grid-template-columns: 1fr; }
+    table { display: block; overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="topbar"></div>
+<header>
+  <div class="header-inner">
+    <div class="logo">Y</div>
+    <div>
+      <h1>yudao 本地环境 · 服务引导</h1>
+      <div class="subtitle">本地 Gitea + NORA + Flux 单节点环境，所有访问入口与默认凭据（核对：2026-11-14）</div>
+    </div>
+    <div class="header-right">
+      <div>当前访问主机</div>
+      <span class="host-badge" id="host">-</span>
+      <div style="margin-top:4px">内网专用 · 请勿暴露公网</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="notice">
+    <p><strong>内网弱口令环境：</strong>本页含明文默认口令，Gitea 只走 HTTP、NORA 未开鉴权，仅限离线演示 / 内网开发，禁止用于生产或映射到公网。</p>
+    <p><strong>后端尚未部署：</strong>前端管理后台是纯静态站点，首页与登录页都能打开，但 <code>/admin-api/**</code> 返回 502，提交登录会失败，本环境没有可用的业务账号。文档里出现的 <code>vben / 123456</code> 是上游示例，不能用于登录。</p>
+    <p><strong>关于 10.10.10.10：</strong>它是服务器 dummy0 上的 /32 固定地址，只有服务器本机和集群内 Pod 可达，开发机访问会超时；浏览器一律使用本页自动生成的当前主机地址。</p>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <h2>常用入口</h2>
+      <span class="section-note">链接按当前访问主机自动生成，换网后只要用新 IP 打开本页即可，无需改页面</span>
+    </div>
+    <div class="grid" id="services"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Gitea 仓库</h2>
+      <span class="section-note">组织 yudao，两个仓库均为私有，默认分支 template/base-v2</span>
+    </div>
+    <div class="repo-list" id="repos"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>账号与口令</h2>
+      <span class="section-note"><button class="btn" id="toggle-secret" type="button">隐藏口令</button></span>
+    </div>
+    <table>
+      <thead>
+        <tr><th style="width:22%">服务</th><th style="width:18%">用户名</th><th style="width:20%">口令 / 凭据</th><th>说明</th></tr>
+      </thead>
+      <tbody id="creds"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>集群与地址说明</h2></div>
+    <div class="info-grid">
+      <div class="info-box">
+        <h3>固定身份（不随换网变化）</h3>
+        <ul>
+          <li><span class="mono">10.10.10.10</span>：dummy0 /32，换路由器、换场地都不变</li>
+          <li>镜像仓库 <span class="mono">10.10.10.10:4000</span>：清单、工作流、Flux 都写它</li>
+          <li>apiserver <span class="mono">https://10.10.10.10:6443</span>：advertise 地址</li>
+          <li>集群内 Service 域名：<span class="mono">*.yudao-local.svc.cluster.local</span></li>
+        </ul>
+      </div>
+      <div class="info-box">
+        <h3>服务器本机入口</h3>
+        <ul>
+          <li><span class="mono">https://127.0.0.1:6443</span>：kubectl 用的 kubeconfig 地址</li>
+          <li><span class="mono">/home/k8s/.kube/config</span>：客户端证书认证，权限 600</li>
+          <li>命名空间 <span class="mono">yudao-local</span>（基础环境与前端）、<span class="mono">flux-system</span>（控制器）</li>
+        </ul>
+      </div>
+      <div class="info-box">
+        <h3>hostPort 一览</h3>
+        <ul>
+          <li><span class="mono">80</span> 前端 admin-vben　<span class="mono">3000</span> Gitea</li>
+          <li><span class="mono">4000</span> NORA　<span class="mono">5432</span> PostgreSQL</li>
+          <li><span class="mono">8080</span> 本引导页（portal）</li>
+          <li>act_runner / Flux 无对外端口，runner 主动长轮询 Gitea 领取任务</li>
+        </ul>
+      </div>
+      <div class="info-box">
+        <h3>本页由谁提供</h3>
+        <ul>
+          <li>Deployment <span class="mono">yudao-local/portal</span>，镜像 <span class="mono">nginx:stable-alpine</span></li>
+          <li>页面内容来自 ConfigMap <span class="mono">portal-html</span>，改页面后 <span class="mono">apply -k</span> 自动滚动更新</li>
+          <li>清单：<span class="mono">yudao-env/k8s-base/services/portal.yaml</span></li>
+          <li>文档：<span class="mono">docs/09-gitops/portal.md</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>换网后要做什么</h2></div>
+    <ol class="steps">
+      <li>把浏览器书签里的旧 IP 换成新的局域网 IP，打开 <span class="mono">http://&lt;新IP&gt;:8080/</span>；本页所有链接会自动指向新 IP。</li>
+      <li>执行 <span class="mono">bash ops/gitea-root-url.sh</span> 更新 Gitea 的 <span class="mono">ROOT_URL</span> 并重启 Gitea，否则页面链接、克隆地址和 Actions 回调还是旧 IP。</li>
+      <li>手动把 <span class="mono">.env</span> 里的 <span class="mono">NORA_PUBLIC_URL</span> 改成新 IP，重跑 <span class="mono">bash ops/apply-env.sh</span> 并重启 NORA。</li>
+      <li>文档 <span class="mono">docs/09-gitops/access-and-credentials.md</span> 里的 <span class="mono">192.168.1.102</span> 按新 IP 替换。</li>
+      <li><strong>不用改：</strong><span class="mono">10.10.10.10</span> 相关的镜像名、Flux GitRepository 的 Service 域名、工作流里的 <span class="mono">REGISTRY</span>。</li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span>yudao-env / k8s-base · 单节点 kubeadm v1.36.2 · k8s-master</span>
+    <span>文档站（开发机本地预览）：<span class="mono">http://127.0.0.1:5173/</span>，不在服务器上部署</span>
+    <span>地址与凭据完整版：docs/09-gitops/access-and-credentials.md</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var HOST = window.location.hostname || '192.168.1.102';
+  document.getElementById('host').textContent = HOST;
+
+  function http(port, path) {
+    return 'http://' + HOST + (port ? ':' + port : '') + (path || '/');
+  }
+  function tcp(port) { return HOST + ':' + port; }
+
+  var services = [
+    {
+      tag: 'WEB', name: '前端管理后台', sub: 'admin-vben',
+      url: http(80), href: true, status: '已实测 200', tone: 'ok',
+      cred: '无（后端未部署）',
+      desc: 'Vben Admin 静态站点，首页、/auth/login 与全部 JS/CSS 均 200；/admin-api 502，登录动作会失败。'
+    },
+    {
+      tag: 'GIT', name: 'Gitea', sub: 'Git + Actions',
+      url: http(3000), href: true, status: '已实测 200', tone: 'ok',
+      cred: 'devops / devops123',
+      desc: '代码托管与 CI 触发源；私有仓库需登录，只开 HTTP（未开 SSH），runner 主动长轮询领取任务。'
+    },
+    {
+      tag: 'REG', name: 'NORA', sub: '制品仓库',
+      url: http(4000), href: true, status: '已实测 200', tone: 'ok',
+      cred: '无鉴权',
+      desc: 'Docker Registry v2 / Maven / npm 代理；集群内镜像地址固定写 10.10.10.10:4000，本页用局域网 IP 只用于看页面。'
+    },
+    {
+      tag: 'DB', name: 'PostgreSQL', sub: 'gitea 业务库',
+      url: tcp(5432), href: false, status: 'TCP 端口', tone: 'tcp',
+      cred: 'postgres / 123456',
+      desc: '数据库不是网页，点「复制」拿地址用客户端连接；当前只有 gitea / postgres / template0 / template1 四个库。'
+    },
+    {
+      tag: 'SSH', name: '服务器 SSH', sub: 'k8s-master',
+      url: tcp(22), href: false, status: 'TCP 端口', tone: 'tcp',
+      cred: 'k8s / 1qazXSW@',
+      desc: '登录命令 ssh k8s@' + HOST + '；/opt/yudao 属主是 k8s，改文件通常不需要 sudo。'
+    },
+    {
+      tag: 'DOC', name: '项目文档站', sub: 'VitePress',
+      url: 'http://127.0.0.1:5173/', href: false, status: '仅开发机本机', tone: 'warn',
+      cred: '无账号',
+      desc: '文档站是开发机上 npm run docs:dev 的本地预览，不是服务器服务；不要在服务器上访问 127.0.0.1:5173。'
+    }
+  ];
+
+  var repos = [
+    { name: 'yudao/yudao-ui-admin-vben', desc: '前端源码 + Gitea Actions 工作流', path: '/yudao/yudao-ui-admin-vben' },
+    { name: 'yudao/yudao-gitops', desc: 'Flux 清单 + image-automation 回写的 newTag', path: '/yudao/yudao-gitops' }
+  ];
+
+  var creds = [
+    { svc: 'Gitea Web / Git HTTP', user: 'devops', pass: 'devops123', note: '唯一管理员，邮箱 devops@yudao.local；已关闭自助注册' },
+    { svc: 'PostgreSQL', user: 'postgres', pass: '123456', note: '来自 k8s-base/.env（由 env_local 转换）；Gitea 复用同一组变量' },
+    { svc: 'SSH', user: 'k8s', pass: '1qazXSW@', note: '用户提供的初始口令，建议首次登录后修改' },
+    { svc: 'NORA', user: '无', pass: '无鉴权', note: 'NORA_AUTH_ENABLED=false，纯 HTTP，内网任何人可推拉镜像' },
+    { svc: '前端 admin-vben', user: '无', pass: '无', note: '静态站点无鉴权；后端未部署，没有可用业务账号' },
+    { svc: 'Flux 访问 Gitea', user: 'devops', pass: '<Gitea 令牌>', note: 'Secret flux-system/gitea-auth 的 password 必须是令牌，不是 devops123；明文在 /opt/yudao/k8s-base/.gitea-token' },
+    { svc: 'act_runner', user: '无对外账号', pass: '<注册令牌>', note: 'Secret yudao-local/gitea-runner-token；注册后的长期凭证在 PVC 的 /data/.runner' },
+    { svc: 'K8s API', user: 'kubernetes-admin', pass: '<客户端证书>', note: 'kubeconfig /home/k8s/.kube/config，证书认证没有密码' }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function copyBtn(text, label) {
+    return '<button class="btn" type="button" data-copy="' + esc(text) + '">' + (label || '复制') + '</button>';
+  }
+
+  document.getElementById('services').innerHTML = services.map(function (s) {
+    var addr = s.href
+      ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.url) + '</a>'
+      : '<span class="plain">' + esc(s.url) + '</span>';
+    return '<div class="card">' +
+      '<div class="card-top"><span class="tag">' + esc(s.tag) + '</span>' +
+        '<span class="card-name">' + esc(s.name) + '</span>' +
+        '<span class="card-sub">' + esc(s.sub) + '</span></div>' +
+      '<div class="card-addr">' + addr + copyBtn(s.url) + '</div>' +
+      '<div class="card-desc">' + esc(s.desc) + '</div>' +
+      '<div class="card-foot"><span class="badge ' + s.tone + '">' + esc(s.status) + '</span>' +
+        '<span class="cred-inline">' + esc(s.cred) + '</span></div>' +
+      '</div>';
+  }).join('');
+
+  document.getElementById('repos').innerHTML = repos.map(function (r) {
+    var page = http(3000, r.path);
+    var clone = page + '.git';
+    return '<div class="repo">' +
+      '<div class="repo-name">' + esc(r.name) + '</div>' +
+      '<div class="repo-meta">' + esc(r.desc) + ' · private · template/base-v2</div>' +
+      '<div class="repo-line"><a href="' + esc(page) + '" target="_blank" rel="noopener">' + esc(page) + '</a> ' + copyBtn(page) + '</div>' +
+      '<div class="repo-line" style="margin-top:6px;color:#4e5969">' + esc(clone) + ' ' + copyBtn(clone, '复制克隆地址') + '</div>' +
+      '</div>';
+  }).join('');
+
+  var hidden = false;
+  function renderCreds() {
+    document.getElementById('creds').innerHTML = creds.map(function (c) {
+      var isSecret = c.pass.indexOf('<') !== 0 && c.pass !== '无' && c.pass !== '无鉴权';
+      var pass = (hidden && isSecret) ? '••••••' : c.pass;
+      var cls = isSecret ? 'secret mono' : 'mono';
+      return '<tr><td>' + esc(c.svc) + '</td><td class="mono">' + esc(c.user) + '</td>' +
+        '<td><span class="' + cls + '">' + esc(pass) + '</span>' +
+        (isSecret ? ' ' + copyBtn(c.pass, '复制') : '') + '</td>' +
+        '<td class="muted">' + esc(c.note) + '</td></tr>';
+    }).join('');
+    document.getElementById('toggle-secret').textContent = hidden ? '显示口令' : '隐藏口令';
+  }
+  renderCreds();
+
+  document.getElementById('toggle-secret').addEventListener('click', function () {
+    hidden = !hidden;
+    renderCreds();
+  });
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('[data-copy]') : null;
+    if (!btn) return;
+    var text = btn.getAttribute('data-copy');
+    function done() {
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      btn.classList.add('copied');
+      setTimeout(function () { btn.textContent = old; btn.classList.remove('copied'); }, 1400);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+    } else {
+      fallback(text, done);
+    }
+  });
+
+  function fallback(text, done) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (err) { /* 复制失败时用户仍可手动选中 */ }
+    document.body.removeChild(ta);
+  }
+})();
+</script>
+</body>
+</html>

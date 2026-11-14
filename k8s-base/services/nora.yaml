@@ -1,0 +1,101 @@
+# ==================== nora（制品仓库：Docker / Maven / npm，含 hosted + 上游代理）====================
+# 由 ../kustomization.yaml 引用；从 ../../gitops-k8s-mini/base/services/nora.yaml 复制，按 k8s-base 的 Secret 名适配
+# 镜像仓库地址固定 10.10.10.10:4000（dummy0），不随路由器 DHCP 变；镜像名里带地址，变了会导致清单和已部署 Pod 全失效
+# 除镜像外还承担 Maven / npm 代理缓存，是 yudao-env 原有约定，不用再单起一个 registry:2
+# 2026-11-14 改为单容器直出：原先的 nginx sidecar（4000 → NORA 4001）是排查纯 HTTP 兼容问题时的遗留，
+#   实测 NORA 直接监听 4000 即可承接 Registry v2 推送；真正解决 docker push 的是 buildx registry.insecure=true。
+#   config/nora/nginx.conf 保留备查，kustomization.yaml 不再生成 nora-nginx ConfigMap。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nora-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nora
+  labels:
+    app: nora
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 本地存储只允许单写入实例
+  selector:
+    matchLabels:
+      app: nora
+  template:
+    metadata:
+      labels:
+        app: nora
+    spec:
+      terminationGracePeriodSeconds: 30   # 停止时刷新审计日志和 token 使用记录
+      securityContext:
+        fsGroup: 101   # 镜像以 nora 用户（uid 100 / gid 101）运行
+      containers:
+        - name: nora
+          image: ghcr.io/getnora-io/nora:1.4.4
+          ports:
+            - containerPort: 4000
+              hostPort: 4000   # 对外 http://<节点IP>:4000/ 与 10.10.10.10:4000，不随换网变
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: NORA_HOST
+              value: 0.0.0.0
+            - name: NORA_PORT
+              value: "4000"   # 单容器直出，不再需要 4001 + nginx 转发
+            - name: NORA_REGISTRIES_ENABLE
+              value: docker,maven,npm
+            - name: NORA_CURATION_MODE
+              value: "off"   # 1.5.0 起代理仓库必须显式设置
+            - name: NORA_AUTH_ENABLED
+              value: "false"   # 内网环境不开鉴权，任何人可推送，仅用于本地开发
+            # 以下取自 Secret yudao-env（.env 由 env_local 转换而来），键名与 NORA 原生变量一致
+            - name: NORA_PUBLIC_URL
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_PUBLIC_URL, optional: true }
+            - name: NORA_MAVEN_PROXIES
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_MAVEN_PROXIES, optional: true }
+            - name: NORA_NPM_PROXY
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_NPM_PROXY, optional: true }
+            - name: NORA_DOCKER_PROXIES
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: NORA_DOCKER_PROXIES, optional: true }
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nora-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nora
+spec:
+  selector:
+    app: nora
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000

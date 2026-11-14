@@ -1,4 +1,4 @@
-# ==================== 基础环境：postgresql、gitea、registry（镜像仓库） ====================
+# ==================== 基础环境：postgresql、gitea、nora（制品仓库）、act_runner、portal（服务引导页）====================
 # 目标集群：自建 kubeadm 单机集群（k8s-master，Ubuntu 24.04），命名空间 yudao-local
 # 手工部署，不参与 Flux 同步：Flux 要连的 Git 服务、要扫的镜像仓库都在这里，自己同步自己没有意义
 #   kubectl apply -k k8s-base
@@ -16,13 +16,16 @@ resources:
   - services/gitea.yaml
   - services/nora.yaml
   - services/act-runner.yaml
+  - services/portal.yaml       # 内网服务引导页，hostPort 8080，页面见 config/portal/index.html
   # - services/registry.yaml   # 已弃用：改用 NORA（同一环境既有约定），文件保留备查
 # runner 的配置与启动脚本；文件内容变化会生成带新哈希的 ConfigMap，Pod 自动滚动更新
+# nora 已改为单容器直出（2026-11-14），不再需要 nora-nginx ConfigMap；config/nora/nginx.conf 仅留档
+# portal 的页面内容也走 generator：改完 index.html 重新 apply -k 即自动滚动更新
 configMapGenerator:
   - name: act-runner-config
     files:
       - config.yaml=config/act-runner/config.yaml
       - entrypoint.sh=config/act-runner/entrypoint.sh
-  - name: nora-nginx
+  - name: portal-html
     files:
-      - nginx.conf=config/nora/nginx.conf
+      - index.html=config/portal/index.html

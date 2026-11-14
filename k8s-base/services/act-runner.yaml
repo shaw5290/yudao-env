@@ -1,0 +1,127 @@
+# ==================== act_runner（Gitea Actions 执行器）+ dind ====================
+# 由 ../kustomization.yaml 引用
+# host 模式：job 直接在 runner 容器内跑，不额外拉 docker.gitea.com/runner-images（体积大、本机 github 不通）
+#   - runner 镜像自带 git/bash，docker CLI 由 initContainer 从 dind 镜像拷到 /docker-bin，不联网装包
+#   - runner 与 dind 同 Pod 共享网络命名空间，DOCKER_HOST=tcp://127.0.0.1:2375（不暴露到宿主机，安全）
+#   - dind 放行 HTTP registry 10.10.10.10:5000，并配 Docker Hub 镜像加速（本机直连 docker.io 超时）
+# 注册令牌来自 Secret gitea-runner-token，由 ops/act-runner-token.sh 生成
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: act-runner-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi   # 只放 .runner 注册信息和 job 工作目录，镜像层不在 PVC 里
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: act-runner
+  labels:
+    app: act-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 注册凭证和 dind 存储都不允许并发写
+  selector:
+    matchLabels:
+      app: act-runner
+  template:
+    metadata:
+      labels:
+        app: act-runner
+    spec:
+      initContainers:
+        # 复用已缓存的 dind 镜像，把 docker CLI 拷到共享卷；runner 镜像是 Alpine，不含 docker
+        - name: docker-cli
+          image: docker.m.daocloud.io/library/docker:dind
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /docker-bin/cli-plugins
+              cp /usr/local/bin/docker /docker-bin/docker
+              cp /usr/local/libexec/docker/cli-plugins/docker-buildx /docker-bin/cli-plugins/docker-buildx
+              chmod 755 /docker-bin/docker /docker-bin/cli-plugins/docker-buildx
+          volumeMounts:
+            - name: docker-bin
+              mountPath: /docker-bin
+      containers:
+        - name: dind
+          image: docker.m.daocloud.io/library/docker:dind
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""        # 关掉 TLS，只监听 2375；不出宿主机，仅供本 Pod 内使用
+            - name: TZ
+              value: Asia/Shanghai
+          args:
+            # 不再传 --host：dind 入口脚本已默认监听 unix socket + tcp://0.0.0.0:2375，
+            # 再传一个 --host 会因 2375 端口重复绑定导致 dockerd 反复退出
+            - --tls=false
+            - --insecure-registry=10.10.10.10:4000
+            - --registry-mirror=https://docker.m.daocloud.io
+          securityContext:
+            privileged: true   # dockerd 需要，节点未启用 PodSecurity 限制
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "docker info >/dev/null 2>&1"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: docker-storage
+              mountPath: /var/lib/docker
+        - name: runner
+          image: gitea/act_runner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: PATH
+              value: /docker-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: DOCKER_HOST
+              value: tcp://127.0.0.1:2375
+            - name: DOCKER_CONFIG
+              value: /docker-bin   # docker CLI 在 $DOCKER_CONFIG/cli-plugins 下找 buildx 插件
+            - name: GITEA_URL
+              value: http://gitea.yudao-local.svc.cluster.local:3000/   # Service 域名，换网不变
+            - name: RUNNER_NAME
+              value: k8s-act-runner
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: gitea-runner-token, key: token }
+          command: ["/config/entrypoint.sh"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+            - name: docker-bin
+              mountPath: /docker-bin
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: act-runner-data
+        - name: docker-storage   # 镜像层/构建缓存随 Pod 生命周期走，重建会重新拉基础镜像
+          emptyDir: {}
+        - name: docker-bin
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: act-runner-config
+            defaultMode: 0755
