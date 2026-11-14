@@ -6,7 +6,7 @@
 # 固定地址 10.10.10.10 由 fixed-ip-k8s 的 dummy0 提供，换网不变，所以这里写死不需要跟着 IP 改
 set -euo pipefail
 
-REGISTRY="${REGISTRY:-10.10.10.10:5000}"
+REGISTRY="${REGISTRY:-10.10.10.10:4000}"   # NORA 的 Docker 仓库端口；曾短暂用过独立 registry:2 的 5000，已弃用
 CERTS_D="/etc/containerd/certs.d/$REGISTRY"
 
 sudo mkdir -p "$CERTS_D"

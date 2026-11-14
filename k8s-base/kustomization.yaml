@@ -14,4 +14,15 @@ resources:
   - namespace.yaml
   - services/postgresql.yaml
   - services/gitea.yaml
-  - services/registry.yaml
+  - services/nora.yaml
+  - services/act-runner.yaml
+  # - services/registry.yaml   # 已弃用：改用 NORA（同一环境既有约定），文件保留备查
+# runner 的配置与启动脚本；文件内容变化会生成带新哈希的 ConfigMap，Pod 自动滚动更新
+configMapGenerator:
+  - name: act-runner-config
+    files:
+      - config.yaml=config/act-runner/config.yaml
+      - entrypoint.sh=config/act-runner/entrypoint.sh
+  - name: nora-nginx
+    files:
+      - nginx.conf=config/nora/nginx.conf
