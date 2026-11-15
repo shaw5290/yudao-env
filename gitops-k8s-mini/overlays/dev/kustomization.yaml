@@ -4,6 +4,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: yudao-dev   # 命名空间名 = yudao-<环境>（由 ../../bootstrap/dev 创建）；以后转 Helm 时对应 helm -n
 resources:
+  - namespace.yaml      # 自动创建 yudao-dev 命名空间（Flux 不再依赖手工 bootstrap）
   - ../../base
   - apps/gateway.yaml   # API 网关（hostPort 48080，dev 唯一对外入口）
   - apps/auth.yaml      # 认证服务（微服务，注册 Nacos）

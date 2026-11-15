@@ -1,0 +1,9 @@
+# yudao-dev 命名空间：随 overlays/dev 由 Flux 自动创建，无需手工 apply。
+# 之前需要手动 kubectl apply -k bootstrap/dev 创建，容易遗漏，
+# 一旦缺失会导致 Flux Kustomization（wait:true）整批资源 apply 失败、Pod 不创建。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: yudao-dev
+  labels:
+    app.kubernetes.io/part-of: yudao-env-mini
