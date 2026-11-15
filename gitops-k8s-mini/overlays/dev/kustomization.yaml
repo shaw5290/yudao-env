@@ -5,6 +5,11 @@ kind: Kustomization
 namespace: yudao-dev   # 命名空间名 = yudao-<环境>（由 ../../bootstrap/dev 创建）；以后转 Helm 时对应 helm -n
 resources:
   - ../../base
+  - apps/gateway.yaml   # API 网关（hostPort 48080，dev 唯一对外入口）
+  - apps/auth.yaml      # 认证服务（微服务，注册 Nacos）
+  - apps/system.yaml    # 系统服务（微服务，注册 Nacos）
+  - apps/infra.yaml     # 基础设施服务（微服务，注册 Nacos）
+  - apps/server.yaml    # 单体聚合服务（禁用 Nacos，仅内部）
 # 镜像版本差异示例（ACR 中的应用镜像、或固定中间件版本）：
 # images:
 #   - name: registry.cn-hangzhou.aliyuncs.com/<ACR 命名空间>/yudao-gateway

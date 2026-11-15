@@ -19,12 +19,11 @@
                      │
    集群 <环境> ── Flux kustomize-controller ──▶ apply overlays/<环境>（命名空间 yudao-<环境>）
                      │
-   ACR ◀── image-reflector-controller 扫描新 Tag ── image-automation-controller 把 Tag 提交回 Gitee（local / dev）
+   ACR ◀── image-reflector-controller 扫描新 Tag ── image-automation-controller 把 Tag 提交回 Gitee（dev）
 ```
 
 | 环境 | 集群 | 跟踪分支 | 同步目录 | ACR 镜像自动更新 |
 |---|---|---|---|---|
-| local | 本地自建集群（当前 192.168.31.66） | `feature/dev` | `overlays/local` | 可选（`clusters/local/image-automation.yaml`） |
 | dev | 开发集群 | `feature/dev` | `overlays/dev` | 可选（`clusters/dev/image-automation.yaml`） |
 | test | 测试集群 | `main` | `overlays/test` | 否，手工晋升 |
 | prod | 生产集群 | `main` | `overlays/prod` | 否，手工晋升 |
@@ -33,7 +32,7 @@
 
 - **更少、更轻**：postgresql、redis、rabbitmq、nora 保留；去掉 minio（文件改用数据库或本地存储）；Nacos 换成 r-nacos（Rust 实现，几十 MB 内存），Grafana LGTM 换成单独的 Loki（distroless，只存日志）。
 - **真正的 GitOps**：`gitops-k8s` 是上传文件后手工 `apply -k`；本目录由 Flux CD 从 Gitee 同步，以 Git 中的内容为准，服务器上不再手工 apply。Flux 常驻 4 个控制器（source、kustomize、image-reflector、image-automation），合计约 200~300 MB 内存。
-- **命名空间 `yudao-<环境>`**（`yudao-local`、`yudao-dev`、`yudao-test`、`yudao-prod`，每个环境一个集群）：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在本环境命名空间中，用本目录的 `.env` 生成。
+- **命名空间 `yudao-<环境>`**（`yudao-dev、`yudao-test`、`yudao-prod`，每个环境一个集群）：与 `gitops-k8s` 的 `yudao` 互不影响；Secret 同样叫 `yudao-env`，但在本环境命名空间中，用本目录的 `.env` 生成。
 - **多环境**：`base/` 是共用清单，`overlays/<环境>/` 只写差异，`clusters/<环境>/` 是该环境集群的 Flux 同步配置。
 - **引导资源单独一层**：命名空间、默认 ServiceAccount（挂 ACR 拉取凭证）在 `bootstrap/<环境>/`（共用部分在 `bootstrap/base/`），手工 apply 一次，不参与同步，避免一次错误提交把命名空间连同数据删掉。
 - **配置文件进 ConfigMap**：`base/config/loki.yml` 由 `configMapGenerator` 生成，名称带内容哈希，改了文件后对应 Pod 自动滚动更新。
@@ -68,7 +67,7 @@ gitops-k8s-mini/
 │       ├── gitrepository.yaml     # GitRepository yudao-env：Gitee 地址、分支、凭证 gitee-auth
 │       ├── sync.yaml              # Flux Kustomization yudao-<环境>：同步 overlays/<环境>
 │       └── image-automation.yaml  # 仅 local、dev：ACR 镜像自动更新（默认未启用）
-├── kustomization.yaml         # 兼容旧用法，等同于 overlays/local
+├── kustomization.yaml         # 兼容旧用法，等同于 overlays/dev
 ├── .env.temp                  # Secret yudao-env 模板（提交）
 └── .env                       # 由 .env.temp 新建，含口令（不提交）
 ```
@@ -193,13 +192,13 @@ kubectl --context kubernetes-admin@kubernetes -n flux-system create secret docke
 
 ```bash
 cd /opt/yudao/gitops-k8s-mini
-kubectl --context kubernetes-admin@kubernetes apply -k clusters/local
+kubectl --context kubernetes-admin@kubernetes apply -k clusters/dev
 flux get sources git
 flux get kustomizations
-kubectl --context kubernetes-admin@kubernetes -n yudao-local get pods,svc,pvc -o wide
+kubectl --context kubernetes-admin@kubernetes -n yudao-dev get pods,svc,pvc -o wide
 ```
 
-`local` 换成本集群对应的环境。成功标准：GitRepository `yudao-env` 和 Kustomization `yudao-local` 都是 `READY True`，MESSAGE 中有当前提交号；`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora` 6 个 Pod 都是 `Running 1/1`，PVC 都是 `Bound`。之后按第 3 步末尾导入 PostgreSQL 表结构。
+`local` 换成本集群对应的环境。成功标准：GitRepository `yudao-env` 和 Kustomization `yudao-dev` 都是 `READY True`，MESSAGE 中有当前提交号；`postgresql`、`redis`、`rabbitmq`、`r-nacos`、`loki`、`nora` 6 个 Pod 都是 `Running 1/1`，PVC 都是 `Bound`。之后按第 3 步末尾导入 PostgreSQL 表结构。
 
 **已用旧命名空间 `yudao-mini` 部署过的集群**（包括旧方式 Gitea + gitops-sync）：命名空间改为 `yudao-<环境>` 后，Flux 部署到新的命名空间，旧命名空间中的资源和 PVC 不会自动迁移，也不会被删除；两边 hostPort 相同，旧服务不停新 Pod 会一直 `Pending`。需要保留的数据（PostgreSQL 等）先从旧命名空间导出、导入新命名空间，确认 Gitee 上有完整的仓库副本后删除旧命名空间（其中的 Secret、PVC、Gitea 仓库一并删除，不可恢复）：
 
@@ -413,9 +412,9 @@ kubectl --context kubernetes-admin@kubernetes delete -k bootstrap/<环境>
 ## 校验
 
 ```bash
-kubectl kustomize gitops-k8s-mini/overlays/local > /dev/null   # 离线渲染，不连接集群；dev、test、prod 同理
-kubectl kustomize gitops-k8s-mini/bootstrap/local > /dev/null
-kubectl kustomize gitops-k8s-mini/clusters/local > /dev/null
+kubectl kustomize gitops-k8s-mini/overlays/dev > /dev/null   # 离线渲染，不连接集群；dev、test、prod 同理
+kubectl kustomize gitops-k8s-mini/bootstrap/dev > /dev/null
+kubectl kustomize gitops-k8s-mini/clusters/dev > /dev/null
 ```
 
 ## 注意

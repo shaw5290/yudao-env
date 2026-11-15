@@ -1,5 +1,5 @@
 # ==================== 命名空间 ====================
-# 名称为 yudao-<环境>（yudao-local、yudao-dev、yudao-test、yudao-prod），由 ../<环境>/kustomization.yaml 的 namespace 改写，这里的 env 只是占位
+# 名称为 yudao-<环境>（yudao-dev、yudao-dev、yudao-test、yudao-prod），由 ../<环境>/kustomization.yaml 的 namespace 改写，这里的 env 只是占位
 # 与 gitops-k8s 的 yudao 分开，两套可以装在同一集群（hostPort 冲突见 README）
 apiVersion: v1
 kind: Namespace

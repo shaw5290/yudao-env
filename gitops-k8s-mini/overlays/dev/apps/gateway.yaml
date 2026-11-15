@@ -1,0 +1,98 @@
+# ==================== yudao-gateway（API 网关，dev 环境唯一对外入口）====================
+# 镜像来自 NORA：192.168.1.102:4000/yudao/yudao-gateway:latest
+# 路由：/admin-api/auth/** -> auth-server，/admin-api/system/** -> system-server，/admin-api/infra/** -> infra-server
+# 服务发现依赖 Nacos（r-nacos），以下 env 把 application-dev.yaml 里的 127.0.0.1 改写到集群内 DNS
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yudao-gateway
+  labels:
+    app: yudao-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yudao-gateway
+  template:
+    metadata:
+      labels:
+        app: yudao-gateway
+    spec:
+      containers:
+        - name: yudao-gateway
+          image: 192.168.1.102:4000/yudao/yudao-gateway:latest
+          ports:
+            - containerPort: 48080
+              hostPort: 48080   # 与 nora 同样的做法：直接暴露到节点，前端走 http://<节点IP>:48080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "dev"
+            # ---- Nacos（服务发现 / 配置中心）----
+            - name: SPRING_CLOUD_NACOS_SERVER_ADDR
+              value: "r-nacos.yudao-dev.svc.cluster.local:8848"
+            # 用 public 命名空间，避免首次部署必须先手工建 dev 命名空间；需要隔离时改成 dev 并提前建好
+            - name: SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE
+              value: "public"
+            - name: SPRING_CLOUD_NACOS_CONFIG_NAMESPACE
+              value: "public"
+            # ---- 数据库（PostgreSQL，库名 ruoyi-vue-pro）----
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL
+              value: "jdbc:postgresql://postgresql.yudao-dev.svc.cluster.local:5432/ruoyi-vue-pro"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD
+              value: "123456"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL
+              value: "jdbc:postgresql://postgresql.yudao-dev.svc.cluster.local:5432/ruoyi-vue-pro"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD
+              value: "123456"
+            # ---- Redis ----
+            - name: SPRING_DATA_REDIS_HOST
+              value: "redis.yudao-dev.svc.cluster.local"
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            - name: SPRING_DATA_REDIS_DATABASE
+              value: "1"
+            # ---- RabbitMQ ----
+            - name: SPRING_RABBITMQ_HOST
+              value: "rabbitmq.yudao-dev.svc.cluster.local"
+            - name: SPRING_RABBITMQ_PORT
+              value: "5672"
+            - name: SPRING_RABBITMQ_USERNAME
+              value: "guest"
+            - name: SPRING_RABBITMQ_PASSWORD
+              value: "guest"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 48080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 48080
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yudao-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: yudao-gateway
+  ports:
+    - name: http
+      port: 48080
+      targetPort: 48080

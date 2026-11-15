@@ -1,8 +1,8 @@
 # ==================== GitOps 最小环境入口（兼容旧用法） ====================
-# 清单已拆分为 base/（共用）+ overlays/<环境>/（local、dev、test、prod），由 Flux CD 从 Gitee 同步（clusters/<环境>/）
-# 本文件等同于 overlays/local，保留给手工部署：kubectl --context <集群上下文> apply -k gitops-k8s-mini
+# 清单已拆分为 base/（共用）+ overlays/<环境>/（dev、test、prod），由 Flux CD 从 Gitee 同步（clusters/<环境>/）
+# 本文件等同于 overlays/dev，保留给手工部署：kubectl --context <集群上下文> apply -k gitops-k8s-mini
 # 原 gitea、gitops-sync 已停用（见 base/kustomization.yaml 中的注释）
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - overlays/local
+  - overlays/dev

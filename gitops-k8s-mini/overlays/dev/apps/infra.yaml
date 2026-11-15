@@ -1,0 +1,88 @@
+# ==================== yudao-infra-server（基础设施服务：文件/WebSocket/Druid 等，微服务，注册到 Nacos）====================
+# 镜像：192.168.1.102:4000/yudao/yudao-infra-server:latest   端口：48082（HTTP） / 58082（gRPC）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yudao-infra-server
+  labels:
+    app: yudao-infra-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yudao-infra-server
+  template:
+    metadata:
+      labels:
+        app: yudao-infra-server
+    spec:
+      containers:
+        - name: yudao-infra-server
+          image: 192.168.1.102:4000/yudao/yudao-infra-server:latest
+          ports:
+            - containerPort: 48082
+            - containerPort: 58082
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "dev"
+            - name: SPRING_CLOUD_NACOS_SERVER_ADDR
+              value: "r-nacos.yudao-dev.svc.cluster.local:8848"
+            - name: SPRING_CLOUD_NACOS_DISCOVERY_NAMESPACE
+              value: "public"
+            - name: SPRING_CLOUD_NACOS_CONFIG_NAMESPACE
+              value: "public"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_URL
+              value: "jdbc:postgresql://postgresql.yudao-dev.svc.cluster.local:5432/ruoyi-vue-pro"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_MASTER_PASSWORD
+              value: "123456"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_URL
+              value: "jdbc:postgresql://postgresql.yudao-dev.svc.cluster.local:5432/ruoyi-vue-pro"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_USERNAME
+              value: "postgres"
+            - name: SPRING_DATASOURCE_DYNAMIC_DATASOURCE_SLAVE_PASSWORD
+              value: "123456"
+            - name: SPRING_DATA_REDIS_HOST
+              value: "redis.yudao-dev.svc.cluster.local"
+            - name: SPRING_DATA_REDIS_PORT
+              value: "6379"
+            - name: SPRING_DATA_REDIS_DATABASE
+              value: "1"
+            - name: SPRING_RABBITMQ_HOST
+              value: "rabbitmq.yudao-dev.svc.cluster.local"
+            - name: SPRING_RABBITMQ_PORT
+              value: "5672"
+            - name: SPRING_RABBITMQ_USERNAME
+              value: "guest"
+            - name: SPRING_RABBITMQ_PASSWORD
+              value: "guest"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 48082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yudao-infra-server
+spec:
+  type: ClusterIP
+  selector:
+    app: yudao-infra-server
+  ports:
+    - name: http
+      port: 48082
+      targetPort: 48082
+    - name: grpc
+      port: 58082
+      targetPort: 58082
