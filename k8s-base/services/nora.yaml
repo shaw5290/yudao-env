@@ -77,9 +77,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 256Mi
             limits:
-              memory: 512Mi
+              # 512Mi 曾在 CI 并发 mvn deploy + docker push 高峰期被 OOMKilled（27 次重启），提到 1.5Gi
+              memory: 1536Mi
           volumeMounts:
             - name: data
               mountPath: /data
