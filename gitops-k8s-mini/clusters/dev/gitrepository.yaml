@@ -1,4 +1,4 @@
-# Git 来源：Gitee 上的 yudao-env 仓库，跟踪 feature/dev 分支，每分钟检查一次新提交
+# Git 来源：Gitee 上的 yudao-env 仓库，跟踪 template/base-v2 分支（作为 dev 环境分支），每分钟检查一次新提交
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -8,7 +8,7 @@ spec:
   interval: 1m
   url: https://gitee.com/imshaw/yudao-env.git
   ref:
-    branch: feature/dev
+    branch: template/base-v2
   secretRef:
     name: gitee-auth      # HTTPS 账号 + Gitee 私人令牌；仓库公开时删除这两行
   ignore: |
