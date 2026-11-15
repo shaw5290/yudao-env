@@ -15,6 +15,40 @@ spec:
     requests:
       storage: 20Gi
 ---
+# 覆盖镜像内置的 /etc/nora/config.toml：server/storage/auth 三段原样保留，追加 [retention] 版本保留策略。
+# 背景：NORA Web UI 是只读的（浏览/搜索/复制 pull 命令），UI 无删除按钮——官方删除路径是
+#   Registry v2 API（docker）与 retention/gc CLI；maven2 协议无 DELETE（405），故 maven 不配规则以免误删。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nora-config
+data:
+  config.toml: |
+    [server]
+    port = 4000
+    public_url = "http://localhost:4000"   # 真实对外地址由 NORA_PUBLIC_URL env 覆盖
+
+    [storage]
+    mode = "local"
+    path = "/data/storage"                 # backed by the /data volume
+
+    [auth]
+    token_storage = "/data/tokens"
+
+    # ==================== 版本保留策略（keep_last 语义：每仓库保留最近 N 个 tag） ====================
+    # docker 的分组单位是完整仓库路径（如 yudao/yudao-gateway），version 即 tag；
+    # exclude_tags 保护的名字不占 keep_last 预算；digest 副本与 blob 由 gc 单独清理。
+    [retention]
+    enabled = true          # 与 env NORA_RETENTION_ENABLED 保持一致（env 优先，双保险）
+    interval = 86400        # 每 24h 自动执行一轮
+    dry_run = false
+
+    # Docker：每个仓库保留最近 5 个 tag，latest 永久保护；未配 name_glob = 适用全部 docker 仓库
+    [[retention.rules]]
+    registry = "docker"
+    keep_last = 5
+    exclude_tags = ["latest"]
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,6 +102,8 @@ spec:
             - name: NORA_DOCKER_PROXIES
               valueFrom:
                 secretKeyRef: { name: yudao-env, key: NORA_DOCKER_PROXIES, optional: true }
+            - name: NORA_RETENTION_ENABLED
+              value: "true"   # 后台版本保留调度开关（规则在 config.toml [retention]，每 24h 执行）
           readinessProbe:
             httpGet:
               path: /health
@@ -84,10 +120,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: config
+              mountPath: /etc/nora/config.toml
+              subPath: config.toml   # 单文件覆盖内置默认配置（retention 规则在里面）
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: nora-data
+        - name: config
+          configMap:
+            name: nora-config
 ---
 apiVersion: v1
 kind: Service
