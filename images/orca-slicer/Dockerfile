@@ -44,7 +44,7 @@ RUN mkdir -p /tmp/orca-src \
     && rm -rf /tmp/orca-src
 ENV ORCA_PROFILES_DIR=/opt/orca-profiles
 
-COPY server.py /app/server.py
+COPY server.py preview.py /app/
 
 # 自定义预设（从 OrcaSlicer 导出的机型 / 工艺 / 耗材 JSON）挂载到这里，按子目录 machine / process / filament 存放
 VOLUME ["/presets"]

@@ -25,7 +25,10 @@ yudao-env/
 │   ├── seata/resources/        # Seata Server 配置（application.yml）
 │   ├── elk/logstash/pipeline/  # Logstash pipeline（tcp json_lines → Elasticsearch）
 │   ├── nora/auth/              # NORA 开启鉴权时的 users.htpasswd（不提交）
+│   ├── orca-slicer/presets/    # OrcaSlicer 自定义预设（machine / process / filament 的 JSON）
 │   └── tdengine/               # TDengine 建库说明
+├── images/                     # 本地构建的镜像
+│   └── orca-slicer/            # OrcaSlicer 切片服务（Dockerfile + server.py + README.md）
 ├── infra/                      # 基础环境安装配置，按系统环境分目录
 │   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md + install-k8s-single.sh + k8s-install.env（K8s 单机）、k8s-cluster.md（K8s 集群）
 └── backups/                    # 数据库备份输出目录（脚本自动生成）
@@ -89,12 +92,15 @@ yudao-env/
 | lgtm | grafana/otel-lgtm:0.37.0 | `LGTM_GRAFANA_PORT`(3000) / `LGTM_OTLP_GRPC_PORT`(4317) / `LGTM_OTLP_HTTP_PORT`(4318) | lgtm |
 | elasticsearch / logstash / kibana | docker.elastic.co/*:8.19.23 | `ELASTICSEARCH_PORT`(9200) / `LOGSTASH_TCP_PORT`(5044) / `KIBANA_PORT`(5601) | elk |
 | nora | ghcr.io/getnora-io/nora:1.4.4 | `NORA_PORT`(4000，Docker / Maven / npm / Web UI 共用) | nora |
+| orca-slicer | yudao-env/orca-slicer:2.5.1（本地构建，`images/orca-slicer`） | `ORCA_SLICER_PORT`(8590) | orca-slicer |
 
 > `postgres` 是 yudao-cloud 切换到 PostgreSQL 时使用的数据库（后端设置 `DB_PRIMARY=postgresql`，默认连接 `127.0.0.1:5432/ruoyi-vue-pro`、`postgres` / `123456`）。首次启动会自动执行 `config/postgres/initdb` 下的脚本建库 `ruoyi-vue-pro` 并导入表结构，见下方"数据库初始化"。账号密码见 `.env` 里的 `POSTGRES_USER` / `POSTGRES_PASSWORD`，需与后端的 `PG_USERNAME` / `PG_PASSWORD` 一致。
 
 > `lgtm` 是 Grafana 官方的一体化可观测性镜像（OTel Collector + Loki 日志 + Tempo 链路 + Prometheus 指标 + Grafana），仅用于开发测试。yudao-cloud-mini 的服务在启动类上添加 `@EnableTraceLogPushOTEL` 注解时默认上报，未添加时默认不上报（避免没启动 LGTM 时报错）；配置项 `management.tracing.export.enabled` 等优先级更高，可以覆盖注解，上报地址在 `application-local.yaml` 中，默认是 `http://127.0.0.1:4318`（OTLP HTTP）。打开 Grafana `http://127.0.0.1:3000`（默认 `admin` / `admin`）→ Explore：选 Tempo 查链路，点击 span 的 "Logs for this span" 跳到该 traceId 在各服务的日志；选 Loki 查日志（如 `{service_name="system-server"} | trace_id="xxx"`），点击日志中的 `trace_id` 跳回链路。数据保存在 `lgtm-data` 卷。
 
 > `elk` 是日志聚合：Logstash 接收应用日志（`tcp` 输入 + `json_lines`，端口 5044），写入 Elasticsearch（按天建索引 `yudao-logs-YYYY.MM.dd`），在 Kibana 中查询；已关闭安全认证，仅用于开发测试，首次启动需要 1~2 分钟。yudao-cloud-mini 的服务在启动类上添加 `@EnableLogPushLogstash` 注解时默认上报，未添加时默认不上报；配置项 `logstash.enabled` 优先级更高，可以覆盖注解，上报地址为 `logstash.destination`（`application-local.yaml` 中默认 `127.0.0.1:5044`）。打开 Kibana `http://127.0.0.1:5601` → Stack Management → 数据视图，创建 `yudao-logs-*`（时间字段 `@timestamp`），然后在 Discover 中按 `traceId`、`app_name`、`level` 等字段查询。Logstash pipeline 见 `config/elk/logstash/pipeline/logstash.conf`，数据保存在 `elasticsearch-data` 卷。
+
+> `orca-slicer` 是 3D 打印报价用的切片服务（OrcaSlicer 命令行 + HTTP 接口）：上传模型和预设，切片成 G-code，返回耗材重量、打印时间、层数、打印参数，供 yudao-blocks 的 print3d-slice 积木调用。镜像在本地构建（`images/orca-slicer`，约 1.5GB），首次启动（菜单 `44`）会先构建，需要几分钟；Docker Hub 访问不了时在 `.env` 中把 `ORCA_SLICER_BASE_IMAGE` 改为镜像站（如 `docker.m.daocloud.io/library/ubuntu:24.04`）。自己调好的机型 / 工艺 / 耗材预设放在 `config/orca-slicer/presets`。接口说明见 [images/orca-slicer/README.md](images/orca-slicer/README.md)，健康检查 `http://127.0.0.1:8590/health`。
 
 > `rabbitmq` 是 yudao-cloud 的可选消息队列（`spring.rabbitmq.*`）。管理员账号由 `.env` 的 `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 设置，变量名与 yudao-cloud 一致，应用侧直接读取同名环境变量；账号只在 `rabbitmq-data` 卷首次初始化时创建，之后修改 `.env` 不会生效（在管理控制台改密码，或清空数据卷）。容器固定 `hostname: rabbitmq`，因为 RabbitMQ 按节点名 `rabbit@<hostname>` 存放数据，hostname 变化会导致重建后读不到原数据。管理控制台 `http://127.0.0.1:15672`。注意 yudao-cloud 各模块的账号默认值不统一（多数为 `guest`，`yudao-server` 为 `rabbit`），连接时以应用侧的 `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` 环境变量为准。
 
@@ -196,7 +202,7 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 - `5` 查看核心服务日志（Ctrl+C 退出）
 - `6` 强制重建核心服务（改了镜像版本、环境变量后用这个）
 
-**中间件（单独启停）**：`10`/`20` TDengine，`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`18`/`28` Nacos，`19`/`29` Grafana LGTM，`40`/`50` Nginx，`41`/`51` ELK，`42`/`52` RabbitMQ，`43`/`53` NORA；`7`/`8` 一键启停全部中间件（`8` 只停中间件，mysql/redis 保持运行）。
+**中间件（单独启停）**：`10`/`20` TDengine，`11`/`21` MinIO，`12`/`22` RocketMQ，`13`/`23` XXL-Job，`14`/`24` Seata，`15`/`25` Sentinel，`16`/`26` Jenkins，`17`/`27` PostgreSQL，`18`/`28` Nacos，`19`/`29` Grafana LGTM，`40`/`50` Nginx，`41`/`51` ELK，`42`/`52` RabbitMQ，`43`/`53` NORA，`44`/`54` OrcaSlicer 切片服务（不在全部中间件中）；`7`/`8` 一键启停全部中间件（`8` 只停中间件，mysql/redis 保持运行）。
 
 单独停止中间件时，有命名数据卷的服务会询问“是否同时删除容器和数据卷”，**默认 N**（直接回车）只停止、保留数据；输入 `y` 会删除该中间件的容器及其数据卷（如 MinIO 的 `yudao_minio-data`），数据不可恢复。Seata、Nginx 没有命名卷，直接停止不询问。
 
@@ -230,7 +236,7 @@ IoT 模块用 TDengine 存设备时序消息，属于中间件，需要通过菜
 
 ### k8s\yudao-k8s.bat 菜单说明
 
-菜单编号跟 `compose\yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52`、`43`/`53` 中间件单独启停、`7`/`8` 中间件全启全停、`31`-`34` 数据库备份还原），只有两处不同：
+菜单编号跟 `compose\yudao.bat` 完全对齐（`1`-`6` 核心操作、`11`-`29`、`41`/`51`、`42`/`52`、`43`/`53` 中间件单独启停、`7`/`8` 中间件全启全停、`44`/`54` OrcaSlicer、`31`-`34` 数据库备份还原），只有两处不同：
 - `5` 查看日志：K8s 没有内置"一次看全部服务日志"的简单命令，改成交互式输入要看哪个 Deployment 的名字（`mysql`/`nacos`/`redis`/`tdengine`/`nginx` 等），单独 `kubectl logs -f` 跟随。
 - `9` 危险操作从"`down -v`"变成"`kubectl delete pvc --all -n yudao`"，效果一样（清空所有数据卷），同样需要手动输入 `DELETE` 二次确认。
 

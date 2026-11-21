@@ -45,6 +45,7 @@
 | logstash | `docker.elastic.co/logstash/logstash:8.19.23` | `elk` | `LOGSTASH_TCP_PORT`(5044) → 5044（tcp + json_lines，应用上报日志） | 绑定挂载 `config/elk/logstash/pipeline`（只读） |
 | kibana | `docker.elastic.co/kibana/kibana:8.19.23` | `elk` | `KIBANA_PORT`(5601) → 5601 | 无 |
 | nora | `ghcr.io/getnora-io/nora:1.4.4` | `nora` | `NORA_PORT`(4000) → 4000（Docker `/v2/`、Maven `/maven2/`、npm `/npm/`、Web UI `/ui/` 共用） | `nora-data`；绑定挂载 `config/nora/auth`（只读，放 `users.htpasswd`，不提交） |
+| orca-slicer | `yudao-env/orca-slicer:2.5.1`（本地构建，`images/orca-slicer`） | `orca-slicer` | `ORCA_SLICER_PORT`(8590) → 8080（切片 HTTP 接口） | 无；绑定挂载 `config/orca-slicer/presets`（只读，自定义预设） |
 
 依赖关系：`nacos`、`xxl-job-admin` 依赖 `mysql`；`logstash`、`kibana` 依赖 `elasticsearch`；`seata-server` 依赖 `nacos` 和 `mysql`（注册/配置中心都走 Nacos，`SEATA_GROUP`）；`rocketmq-broker` 依赖 `rocketmq-namesrv`。容器名为 `${PROJECT_NAME}-<服务名>`，`PROJECT_NAME` 未配置或留空时默认 `yudao`。
 
@@ -53,7 +54,7 @@
 | 分组 | 变量 |
 |---|---|
 | 项目 | `PROJECT_NAME` |
-| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`RABBITMQ_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT`、`NORA_PORT` |
+| 端口 | `NGINX_PORT`、`MYSQL_PORT`、`REDIS_PORT`、`NACOS_PORT`、`NACOS_CONSOLE_PORT`、`NACOS_GRPC_PORT`、`NACOS_GRPC_PORT_2`、`JENKINS_PORT`、`MINIO_PORT`、`MINIO_CONSOLE_PORT`、`ROCKETMQ_NAMESRV_PORT`、`ROCKETMQ_BROKER_PORT`、`ROCKETMQ_BROKER_VIP_PORT`、`RABBITMQ_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`XXL_JOB_PORT`、`SEATA_PORT`、`SEATA_DASHBOARD_PORT`、`SENTINEL_PORT`、`TDENGINE_PORT`、`POSTGRES_PORT`、`LGTM_GRAFANA_PORT`、`LGTM_OTLP_GRPC_PORT`、`LGTM_OTLP_HTTP_PORT`、`ELASTICSEARCH_PORT`、`LOGSTASH_TCP_PORT`、`KIBANA_PORT`、`NORA_PORT`、`ORCA_SLICER_PORT` |
 | MySQL | `MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | Nacos 连接 MySQL | `NACOS_DB_NAME`、`NACOS_DB_USER`、`NACOS_DB_PASSWORD` |
@@ -62,6 +63,7 @@
 | RocketMQ | `ROCKETMQ_BROKER_IP`（宿主机 IP，不能写 `127.0.0.1`） |
 | RabbitMQ | `RABBITMQ_USERNAME`、`RABBITMQ_PASSWORD`（与 yudao-cloud 同名；只在数据卷首次初始化时生效） |
 | NORA | `NORA_PUBLIC_URL`（npm tarball 等下载地址前缀）、`NORA_MAVEN_PROXIES`、`NORA_NPM_PROXY`、`NORA_DOCKER_PROXIES`、`NORA_AUTH_ENABLED`、`NORA_AUTH_ANONYMOUS_READ`、`NORA_AUTH_DOCKER_ANON_PULL` |
+| OrcaSlicer | `ORCA_SLICER_VERSION`、`ORCA_SLICER_BASE_IMAGE`、`ORCA_SLICER_APT_MIRROR`（构建用）、`ORCA_SLICER_WORKERS`、`ORCA_SLICER_TIMEOUT`、`ORCA_SLICER_TOKEN` |
 | XXL-Job | `XXL_JOB_DB_NAME` |
 | Seata | `SEATA_IP`（宿主机 IP） |
 
@@ -99,7 +101,7 @@ docker compose -f compose/schemes/all.yaml --env-file .env --profile minio stop 
 docker compose -f compose/services/rocketmq.yaml --env-file .env --profile rocketmq up -d   # 也可以只用一个服务文件
 
 # 停止全部（含所有 profile，保留数据卷）
-docker compose -f compose/schemes/all.yaml --env-file .env --profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora down
+docker compose -f compose/schemes/all.yaml --env-file .env --profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora --profile orca-slicer down
 ```
 
 K8s 版（与 `k8s\yudao-k8s.bat` 内部命令一致）。**所有 kubectl 命令都显式加 `--context docker-desktop`**：本机默认上下文可能指向其他集群（如线上 EKS）。方案引用了目录外的 `services/*.yaml`，必须用 `kubectl kustomize --load-restrictor LoadRestrictionsNone` 渲染后再 apply，不能用 `apply -k`：
@@ -129,7 +131,7 @@ $K delete deployment/minio service/minio -n yudao --ignore-not-found            
 | 6 | 强制重建核心（`--force-recreate`） | 重新部署核心方案 + rollout restart |
 | 7 / 8 | 启动全部中间件（连同 mysql/redis 一起 `up -d`）/ 停止全部中间件（`stop`，不影响 mysql/redis） | 部署方案 `k8s/schemes/middleware` / 删除中间件的 Deployment、Service（保留 PVC） |
 | 9 | `down -v` 清空所有数据卷，需输入 `DELETE` | `kubectl delete pvc --all -n yudao`，需输入 `DELETE` |
-| 10~19 / 20~29、40~43 / 50~53 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52）、NORA（43/53），仅 18/28、10/20、40/50 为 Compose 版独有；启动经子程序 `:svc_up`（先启动 `DEPS_<服务>` 中的依赖），停止经 `:svc_down` 询问是否删除数据卷（默认 N 只 `stop`；`y` 则 `rm -s -f` 后 `docker volume rm yudao_<卷名>`），无命名卷的 Seata、Nginx 直接 `stop` | 11~17、19、41~43 / 21~27、29、51~53 同左；`10` 为启动核心 + PostgreSQL。启动生成单服务临时方案部署，停止只删 Deployment/Service；启动前若存在 `config\nora\auth\users.htpasswd`，同步为 Secret `nora-htpasswd` |
+| 10~19 / 20~29、40~44 / 50~54 | 启动 / 停止 TDengine（10/20）、MinIO、RocketMQ、XXL-Job、Seata、Sentinel、Jenkins、PostgreSQL、Nacos（18/28）、Grafana LGTM（19/29）、Nginx（40/50）、ELK（41/51）、RabbitMQ（42/52）、NORA（43/53）、OrcaSlicer 切片服务（44/54，不在「全部中间件」中），仅 18/28、10/20、40/50 为 Compose 版独有；启动经子程序 `:svc_up`（先启动 `DEPS_<服务>` 中的依赖），停止经 `:svc_down` 询问是否删除数据卷（默认 N 只 `stop`；`y` 则 `rm -s -f` 后 `docker volume rm yudao_<卷名>`），无命名卷的 Seata、Nginx 直接 `stop` | 11~17、19、41~43 / 21~27、29、51~53 同左；`10` 为启动核心 + PostgreSQL。启动生成单服务临时方案部署，停止只删 Deployment/Service；启动前若存在 `config\nora\auth\users.htpasswd`，同步为 Secret `nora-htpasswd` |
 | 31 | 备份所有非系统库到 `backups/mysql_<时间戳>.sql` | 同左（`kubectl exec deploy/mysql`） |
 | 32 | 从 `backups/` 选择文件还原 | 同左 |
 | 33 | 查看备份文件列表 | 同左 |
@@ -156,7 +158,7 @@ $K delete deployment/minio service/minio -n yudao --ignore-not-found            
 需要重新执行 initdb 时（会删除所有数据，先备份）：
 
 ```bash
-docker compose -f compose/schemes/all.yaml --env-file .env --profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora down -v
+docker compose -f compose/schemes/all.yaml --env-file .env --profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora --profile orca-slicer down -v
 docker compose -f compose/schemes/all.yaml --env-file .env up -d mysql redis
 ```
 
@@ -219,7 +221,7 @@ docker exec -it yudao-tdengine taos -s "CREATE DATABASE IF NOT EXISTS ruoyi_vue_
 - 端口一律用 `.env` 变量映射并带缺省值：`"${XXX_PORT:-<默认端口>}:<容器端口>"`，带引号，缺省值与 `.env.temp` 一致；新增端口时同步在 `.env.temp` 的端口区加变量和默认值，并同步 `k8s/services/` 对应清单的 `hostPort`。
 - 所有变量都写成 `${VAR:-<缺省值>}`，保证没有 `.env` 也能直接启动；口令类缺省值只用于本地开发，须与 `compose\yudao.bat` 的 `DB_PASSWORD`、`config/mysql/initdb/01-create-databases.sql` 中的用户口令保持一致。
 - 运行时数据用**命名卷**（`<服务>-data` / `<服务>-logs` 等），在服务文件末尾 `volumes:` 中声明；只有需要挂载仓库内真实文件的配置/脚本才绑定挂载，路径写 `../../config/...`（相对服务文件）。
-- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务文件名一致（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`、`rabbitmq`、`nora`）；新增服务时同步 `compose\yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES`、服务元数据和菜单编号。
+- 除 mysql/redis 外的服务都用 `profiles: ["<name>"]`，profile 名与服务文件名一致（`nginx`、`nacos`、`tdengine`、`jenkins`、`minio`、`rocketmq`、`xxl-job`、`seata`、`sentinel`、`postgres`、`lgtm`、`elk`、`rabbitmq`、`nora`、`orca-slicer`）；新增服务时同步 `compose\yudao.bat` 开头的 `ALL_PROFILES` / `MIDDLEWARE_SERVICES`、服务元数据和菜单编号。
 - 分节注释格式：`# ==================== 标题 ====================`；需要说明的端口用行尾中文注释。
 - JVM 参数写在 `JAVA_OPTS` / `JAVA_OPT_EXT`，多行时用 `>-`。
 
@@ -303,7 +305,9 @@ yudao-env/
 │   ├── seata/resources/        # Seata Server 配置 application.yml
 │   ├── elk/logstash/pipeline/  # Logstash pipeline：tcp json_lines（5044）→ Elasticsearch 索引 yudao-logs-YYYY.MM.dd
 │   ├── nora/auth/              # NORA 鉴权用 users.htpasswd（bcrypt，不提交，仅提交 .gitkeep）
+│   ├── orca-slicer/presets/    # OrcaSlicer 自定义预设（machine / process / filament），提交前删除 print_host 等打印机地址
 │   └── tdengine/               # TDengine 建库说明
+├── images/                     # 本地构建的镜像：orca-slicer/（OrcaSlicer 切片服务，Dockerfile + server.py + README.md）
 ├── infra/                      # 基础环境安装配置，按系统环境分目录
 │   └── ubuntu-24.04/           # docker.md（Docker）、k8s-single.md + install-k8s-single.sh + k8s-install.env（K8s 单机）、k8s-cluster.md（K8s 集群）
 └── backups/                    # 数据库备份输出目录（mysql_<时间戳>.sql）
@@ -329,7 +333,7 @@ compose 引用但**当前仓库中不存在**的路径（`.gitignore` 已放行�
 不要为了验证而实际启动容器或修改正在运行的环境，优先用静态校验：
 
 ```bash
-P="--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora"
+P="--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora --profile orca-slicer"
 
 # 校验方案的语法和变量替换（用模板，不依赖 .env；--quiet 不输出含密码的展开结果）
 docker compose -f compose/schemes/all.yaml --env-file .env.temp $P config --quiet

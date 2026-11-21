@@ -18,7 +18,7 @@ set CMD=docker compose -f %SCHEME% %ENV_OPT%
 REM 核心服务（不带 profile，up -d 默认只启动这些）
 set CORE_SERVICES=mysql redis
 REM 所有中间件 profile / 服务（新增服务时同步这两行和下面的菜单编号）
-set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora
+set ALL_PROFILES=--profile nginx --profile nacos --profile tdengine --profile minio --profile rocketmq --profile xxl-job --profile seata --profile sentinel --profile jenkins --profile postgres --profile lgtm --profile elk --profile rabbitmq --profile nora --profile orca-slicer
 set MIDDLEWARE_SERVICES=nginx nacos tdengine minio rocketmq-namesrv rocketmq-broker xxl-job-admin seata-server sentinel-dashboard jenkins postgres lgtm elasticsearch logstash kibana rabbitmq nora
 REM 数据卷名前缀 = compose 项目名（name: yudao），实际卷名为 yudao_卷名
 set VOLUME_PREFIX=yudao
@@ -79,6 +79,11 @@ set "SVCS_nora=nora"
 set "VOLS_nora=nora-data"
 set "DEPS_nora="
 set "INFO_nora=Web UI：http://127.0.0.1:4000/ui/，镜像仓库：localhost:4000，Maven：http://127.0.0.1:4000/maven2/，npm：http://127.0.0.1:4000/npm/"
+set "TITLE_orca-slicer=OrcaSlicer 切片服务"
+set "SVCS_orca-slicer=orca-slicer"
+set "VOLS_orca-slicer="
+set "DEPS_orca-slicer="
+set "INFO_orca-slicer=切片接口：http://127.0.0.1:8590/health，首次启动会先构建镜像（下载 OrcaSlicer，需要几分钟），自定义预设放在 config\orca-slicer\presets"
 set "TITLE_xxl-job=XXL-Job"
 set "SVCS_xxl-job=xxl-job-admin"
 set "VOLS_xxl-job=xxl-job-logs"
@@ -133,6 +138,8 @@ set "START_42=rabbitmq"
 set "STOP_52=rabbitmq"
 set "START_43=nora"
 set "STOP_53=nora"
+set "START_44=orca-slicer"
+set "STOP_54=orca-slicer"
 
 REM ---- 数据库备份配置 ----
 set DB_CONTAINER=yudao-mysql
@@ -182,6 +189,7 @@ echo     40. 启动 Nginx          50. 停止 Nginx
 echo     41. 启动 ELK            51. 停止 ELK
 echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
 echo     43. 启动 NORA           53. 停止 NORA
+echo     44. 启动 OrcaSlicer     54. 停止 OrcaSlicer（切片服务，不在「全部中间件」中）
 echo     （停止中间件时会询问是否同时删除数据卷，默认 N 保留数据）
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件 (保留核心)

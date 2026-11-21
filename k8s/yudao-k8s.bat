@@ -68,6 +68,10 @@ set "TITLE_nora=NORA 制品仓库"
 set "DEPLOYS_nora=nora"
 set "DEPS_nora="
 set "INFO_nora=Web UI：http://127.0.0.1:4000/ui/，镜像仓库：localhost:4000，Maven：http://127.0.0.1:4000/maven2/，npm：http://127.0.0.1:4000/npm/"
+set "TITLE_orca-slicer=OrcaSlicer 切片服务"
+set "DEPLOYS_orca-slicer=orca-slicer"
+set "DEPS_orca-slicer="
+set "INFO_orca-slicer=切片接口：http://127.0.0.1:8590/health，镜像需先用 Compose 构建：docker compose -f compose/services/orca-slicer.yaml --env-file .env --profile orca-slicer build"
 set "TITLE_xxl-job=XXL-Job"
 set "DEPLOYS_xxl-job=xxl-job-admin"
 set "DEPS_xxl-job=mysql"
@@ -111,6 +115,8 @@ set "START_42=rabbitmq"
 set "STOP_52=rabbitmq"
 set "START_43=nora"
 set "STOP_53=nora"
+set "START_44=orca-slicer"
+set "STOP_54=orca-slicer"
 
 REM ---- 数据库备份配置 ----
 set DB_DEPLOY=deploy/mysql
@@ -163,6 +169,7 @@ echo     19. 启动 Grafana LGTM   29. 停止 Grafana LGTM
 echo     41. 启动 ELK            51. 停止 ELK
 echo     42. 启动 RabbitMQ       52. 停止 RabbitMQ
 echo     43. 启动 NORA           53. 停止 NORA
+echo     44. 启动 OrcaSlicer     54. 停止 OrcaSlicer（切片服务，不在「全部中间件」中）
 echo.
 echo     7. 启动全部中间件       8. 停止全部中间件
 echo     9. 清空所有数据卷 (PVC，危险！会删除所有数据)

@@ -20,3 +20,4 @@ include:
   - ../services/sentinel.yaml
   - ../services/lgtm.yaml
   - ../services/elk.yaml
+  - ../services/orca-slicer.yaml

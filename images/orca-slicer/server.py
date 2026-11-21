@@ -9,6 +9,9 @@ OrcaSlicer 切片服务：OrcaSlicer 命令行的 HTTP 包装，只用 Python �
   POST /presets/resolve                 同上，preset 可以是名称或预设 JSON 对象：{"type": "machine", "preset": ...}
   POST /slice                           切片；multipart/form-data：file（模型文件）+ params（JSON）
   GET  /slice/{id}/gcode?plate=1        下载切片生成的 G-code（保留 JOB_TTL 秒）
+  GET  /slice/{id}/toolpath?plate=1     下载打印路径预览（YBT1 二进制，格式见 preview.py）
+  POST /preview                         模型预览网格（YBM1 二进制，格式见 preview.py）；multipart file 或 JSON modelUrl / fileName；
+                                        统计信息在响应头 X-Preview-Info（URL 编码的 JSON）
 
 params：
   {
@@ -43,6 +46,8 @@ import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+
+import preview
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -481,6 +486,14 @@ def run_slice(model_name, model_bytes, params):
     plates = [parse_gcode(os.path.join(out_dir, f)) for f in gcodes]
     for plate, file in zip(plates, gcodes):
         plate['plate'] = plate_number(file)
+        # 打印路径预览（按层的挤出路径，供小程序 / 后台 WebGL 预览）；生成失败不影响切片结果
+        try:
+            data, info = preview.build_toolpath(os.path.join(out_dir, file))
+            with open(os.path.join(out_dir, f'plate_{plate["plate"]}.toolpath'), 'wb') as f:
+                f.write(data)
+            plate['toolpath'] = {'size': len(data), **info}
+        except Exception as e:  # noqa: BLE001
+            warnings.append(f'打印路径预览生成失败：{e}')
     result = {
         'id': job_id,
         'version': os.environ.get('ORCA_VERSION'),
@@ -510,6 +523,46 @@ def translate_error(message):
         if keyword in message:
             return f'{hint}（{message}）'
     return message
+
+
+def build_preview(model_name, model_bytes):
+    """模型预览网格（YBM1）：STL 直接读取；其他格式（OBJ / 3MF / STEP 等）用命令行导出 STL 后读取"""
+    ext = os.path.splitext(model_name.lower())[1]
+    if ext not in MODEL_EXTS:
+        raise SliceError(f'不支持的模型格式：{ext or model_name}，支持 {" / ".join(MODEL_EXTS)}')
+    if ext == '.stl':
+        coords = preview.read_stl(model_bytes)
+    else:
+        job_dir = os.path.join(JOBS_DIR, uuid.uuid4().hex)
+        out_dir = os.path.join(job_dir, 'out')
+        os.makedirs(out_dir)
+        model_path = os.path.join(job_dir, 'model' + ext)
+        with open(model_path, 'wb') as f:
+            f.write(strip_3mf_settings(model_bytes, []) if ext == '.3mf' else model_bytes)
+        cmd = [ORCA_BIN, '--export-stl', '--allow-newer-file', '--outputdir', out_dir, model_path]
+        if XVFB == '1' or (XVFB == 'auto' and not os.environ.get('DISPLAY') and shutil.which('xvfb-run')):
+            cmd = ['xvfb-run', '-a'] + cmd
+        with slice_semaphore:
+            try:
+                proc = subprocess.run(cmd, cwd=job_dir, capture_output=True, timeout=SLICE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                raise SliceError(f'模型转换超时（{SLICE_TIMEOUT} 秒）', 504)
+        from array import array
+        coords = array('f')
+        for root, _, files in os.walk(out_dir):
+            for file in sorted(files):
+                if file.lower().endswith('.stl'):
+                    with open(os.path.join(root, file), 'rb') as f:
+                        coords.extend(preview.read_stl(f.read()))
+        shutil.rmtree(job_dir, ignore_errors=True)
+        if not coords:
+            result = (read_json(os.path.join(out_dir, 'result.json')) or {}).get('error_string')
+            log = (proc.stdout + proc.stderr).decode('utf-8', 'replace').splitlines()
+            raise SliceError(translate_error(result) if result else '模型转换失败', 422, tail(log))
+    try:
+        return preview.build_mesh(coords)
+    except ValueError as e:
+        raise SliceError(str(e), 422)
 
 
 def plate_number(file):
@@ -684,17 +737,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/presets/detail':
             data, system_name = library.resolve(query.get('type', 'machine'), query.get('name', ''))
             return self.send_json({'systemPreset': system_name, 'config': data})
-        match = re.fullmatch(r'/slice/([0-9a-f]{32})/gcode', path)
+        match = re.fullmatch(r'/slice/([0-9a-f]{32})/(gcode|toolpath)', path)
         if match:
             out_dir = os.path.join(JOBS_DIR, match.group(1), 'out')
-            file = os.path.join(out_dir, f'plate_{int(query.get("plate", "1"))}.gcode')
+            kind = match.group(2)
+            file = os.path.join(out_dir, f'plate_{int(query.get("plate", "1"))}.{kind}')
             if not os.path.isfile(file):
-                raise SliceError('G-code 不存在或已过期', 404)
-            return self.send_file(file)
+                raise SliceError(('G-code' if kind == 'gcode' else '打印路径预览') + ' 不存在或已过期', 404)
+            return self.send_file(file, 'text/x-gcode' if kind == 'gcode' else 'application/octet-stream')
         raise SliceError('Not Found', 404)
 
     def route_post(self, path, query):
-        if path not in ('/slice', '/presets/resolve'):
+        if path not in ('/slice', '/presets/resolve', '/preview'):
             raise SliceError('Not Found', 404)
         length = int(self.headers.get('Content-Length') or 0)
         if length > MAX_UPLOAD:
@@ -734,6 +788,16 @@ class Handler(BaseHTTPRequestHandler):
                 model_bytes = response.read(MAX_UPLOAD + 1)
             if len(model_bytes) > MAX_UPLOAD:
                 raise SliceError(f'模型文件超过 {MAX_UPLOAD // 1024 // 1024}MB', 413)
+        if path == '/preview':
+            data, info = build_preview(model_name, model_bytes)
+            body_info = urllib.parse.quote(json.dumps(info, ensure_ascii=False))
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('X-Preview-Info', body_info)
+            self.end_headers()
+            self.wfile.write(data)
+            return
         self.send_json(run_slice(model_name, model_bytes, params))
 
     def send_json(self, data, status=200):
@@ -744,9 +808,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_file(self, path):
+    def send_file(self, path, content_type='text/x-gcode'):
         self.send_response(200)
-        self.send_header('Content-Type', 'text/x-gcode')
+        self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(os.path.getsize(path)))
         self.send_header('Content-Disposition', f'attachment; filename="{os.path.basename(path)}"')
         self.end_headers()
