@@ -1,0 +1,26 @@
+# ==================== OrcaSlicer 切片服务（3D 打印报价：模型切片成 G-code，返回耗材重量、打印时间、打印参数） ====================
+# 首次使用先构建镜像：docker compose -f compose/services/orca-slicer.yaml --env-file .env --profile orca-slicer build
+# 单独使用：docker compose -f compose/services/orca-slicer.yaml --env-file .env --profile orca-slicer up -d（推荐用 compose\yudao.bat 菜单）
+# 由 ../schemes/*.yaml 引用组成不同方案
+# 公共配置见 ../base.yaml；挂载文件统一放在仓库根目录的 config/；镜像与接口说明见 images/orca-slicer/README.md
+name: yudao
+services:
+  orca-slicer:
+    extends: { file: ../base.yaml, service: base }   # restart、TZ 等公共配置
+    container_name: ${PROJECT_NAME:-yudao}-orca-slicer
+    image: yudao-env/orca-slicer:${ORCA_SLICER_VERSION:-2.5.1}
+    build:
+      context: ../../images/orca-slicer
+      args:
+        ORCA_VERSION: ${ORCA_SLICER_VERSION:-2.5.1}
+        BASE_IMAGE: ${ORCA_SLICER_BASE_IMAGE:-ubuntu:24.04}   # Docker Hub 访问不了时改为镜像站地址
+        APT_MIRROR: ${ORCA_SLICER_APT_MIRROR:-}               # apt 源（选填）
+    profiles: ["orca-slicer"]
+    ports:
+      - "${ORCA_SLICER_PORT:-8590}:8080"   # 切片 HTTP 接口
+    environment:
+      SLICER_WORKERS: ${ORCA_SLICER_WORKERS:-2}     # 同时切片的数量，按 CPU 核数调整
+      SLICE_TIMEOUT: ${ORCA_SLICER_TIMEOUT:-600}    # 单次切片超时（秒）
+      SLICER_TOKEN: ${ORCA_SLICER_TOKEN:-}          # 设置后调用方需带请求头 Authorization: Bearer <token>
+    volumes:
+      - ../../config/orca-slicer/presets:/presets:ro   # 自定义预设（OrcaSlicer 导出的机型 / 工艺 / 耗材 JSON）

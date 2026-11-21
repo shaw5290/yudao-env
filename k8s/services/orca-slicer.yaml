@@ -1,0 +1,59 @@
+# ==================== orca-slicer（每个服务一个文件）====================
+# 由 schemes/*/kustomization.yaml 引用组成不同方案；单独部署用 k8s\yudao-k8s.bat 菜单（生成单服务临时方案）
+# 不写 namespace，由 ../base 统一添加；挂载仓库文件的 hostPath 指向根目录 config/
+# 镜像需要先在本机构建（Docker Desktop 的 Kubernetes 直接使用本机镜像）：
+#   docker compose -f compose/services/orca-slicer.yaml --env-file .env --profile orca-slicer build
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orca-slicer
+  labels:
+    app: orca-slicer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orca-slicer
+  template:
+    metadata:
+      labels:
+        app: orca-slicer
+    spec:
+      containers:
+        - name: orca-slicer
+          image: yudao-env/orca-slicer:2.5.1
+          imagePullPolicy: IfNotPresent   # 本机构建的镜像，不从仓库拉取
+          ports:
+            - containerPort: 8080
+              hostPort: 8590   # 对应 .env 的 ORCA_SLICER_PORT，冲突时改这里
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: SLICER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: yudao-env, key: ORCA_SLICER_TOKEN, optional: true }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: presets
+              mountPath: /presets
+              readOnly: true
+      volumes:
+        - name: presets
+          hostPath:
+            path: /run/desktop/mnt/host/d/workspace/yudao/yudao-env/config/orca-slicer/presets
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orca-slicer
+spec:
+  selector:
+    app: orca-slicer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
