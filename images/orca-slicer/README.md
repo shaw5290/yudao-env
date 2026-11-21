@@ -2,6 +2,8 @@
 
 3D 打印报价用：把模型切片成 G-code，返回耗材重量、打印时间、层数和打印参数，并可下载 G-code 用于生产。
 
+两种预览数据的格式见 `preview.py` 文件头，商城小程序（`pages/public/model-preview/viewer.js`）与管理后台用 WebGL 渲染。
+
 镜像 = Ubuntu 24.04 + [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) Linux 版命令行（AppImage 解包，当前 2.5.1）+ 同版本源码中的预设 JSON + HTTP 包装 `server.py`（只用 Python 标准库）。
 
 - OrcaSlicer 2.5 起安装包中的预设打包为 `.opc`（自定义压缩格式），构建时从同版本源码包（codeload.github.com）只解压 `resources/profiles` 下的 JSON 到 `/opt/orca-profiles`，供本服务展开继承、列出预设。
@@ -44,6 +46,8 @@ OrcaSlicer 命令行**不会展开预设的继承关系**（直接使用时平�
 | `POST /presets/resolve` | 同上，JSON 请求体 `{"type": "machine", "preset": 名称或预设 JSON 对象}`，用于校验自定义预设、读取平台尺寸 |
 | `POST /slice` | 切片，见下 |
 | `GET /slice/{id}/gcode?plate=1` | 下载 G-code；切片结果保留 1 小时（`JOB_TTL`），调用方应及时转存到文件服务 |
+| `GET /slice/{id}/toolpath?plate=1` | 下载打印路径预览（YBT1 二进制：按层的挤出折线，带外墙 / 内墙 / 填充 / 支撑等类型，坐标 0.01mm；点数过多时抽稀），切片时生成 |
+| `POST /preview` | 模型预览网格（YBM1 二进制：顶点量化为 u16，三角面超过 8 万时合并顶点简化）；`multipart/form-data` 的 `file`，或 JSON `{ modelUrl, fileName }`；STL 直接读取，其他格式（OBJ / 3MF / STEP）用命令行导出 STL 后读取；统计信息（原始 / 预览三角面数、尺寸）在响应头 `X-Preview-Info`（URL 编码的 JSON） |
 
 ### POST /slice
 
